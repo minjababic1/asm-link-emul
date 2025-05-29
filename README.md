@@ -1,2 +1,2 @@
 # asm-link-emul
-This is a student project developed for the System Software course. It implements a complete toolchain — including an assembler, linker, and emulator — for a custom abstract machine with a simplified instruction set architecture
+This is a student project developed for the System Software course. It implements an assembler, linker, and emulator for a custom abstract machine with a simplified instruction set architecture
