@@ -1,5 +1,7 @@
 %{
 #include "inc/asembler.hpp"
+#include <fstream>
+#include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -76,23 +78,36 @@ statement: HALT {printf("HALT Instruction\n");}
      | CSRWR gpr COMMA csr {printf("CSRWR Instruction\n");}
 ;
 
-label: SYMBOL COLON { printf("Label with symbol %s\n", $1); }
-     | SYMBOL COLON statement { printf("Label with symbol %s\n", $1); }
-     | SYMBOL COLON directive { printf("Label with symbol %s\n", $1); }
+label: SYMBOL COLON { printf("Label with symbol %s\n", $1); defineSym($1); }
+     | SYMBOL COLON {defineSym($1);} statement { printf("Label with symbol %s\n", $1); }
+     | SYMBOL COLON {defineSym($1);} directive { printf("Label with symbol %s\n", $1); }
 ;
 
-directive_line: GLOBAL { current_directive = "global"; } symbol_list {
+
+directive_line: GLOBAL global_symbol_list {
             printf("GLOBAL directive\n");
       }
-      | EXTERN { current_directive = "extern"; } symbol_list {
+      | EXTERN extern_symbol_list {
             printf("EXTERN directive\n");
       }
-      | SECTION section_name {printf("SECTION directive\n");}
+      | SECTION SYMBOL {
+            printf("SECTION directive\n");
+            std::string sym_name = $2;
+            SymbolBinding bind = SymbolBinding::LOC;
+            SymbolType type = SymbolType::SCTN;
+            std::string sctn_name = sym_name;
+            uint32_t value = 0;
+            bool defined = true;
+            addSym(Sym(sym_name, bind, type, sctn_name, value, defined));
+            openSection($2);
+            }
       | WORD symbol_literal_list {printf("WORD directive\n");}
       | SKIP LITERAL {printf("SKIP directive\n");}
       | END {printf("END directive\n");
-             printSymbolLists();
-            }
+            backPatch();
+            printAll();
+            return 0;
+      }
 ;
 
 gpr: R0 
@@ -134,13 +149,39 @@ data_operand: DOLLAR LITERAL {printf("Found literal with dollar $ - $%d\n", $2);
       | OPEN_SQUARE_BRACKET reg PLUS SYMBOL CLOSE_SQUARE_BRACKET {printf("reg + symbol %s inside []", $4);}
 ;
 
-symbol_list: SYMBOL {
+global_symbol_list: SYMBOL {
       printf("Found symbol %s\n", $1);
-      insertIntoCurrentDirectiveList($1);
+      std::string sym_name = $1;
+      SymbolBinding bind = SymbolBinding::GLOB;
+      addSym(Sym(sym_name, bind));
+      reportGlobalSym(sym_name);
 }
-      | symbol_list COMMA SYMBOL {
+      | global_symbol_list COMMA SYMBOL {
             printf("Found symbol %s\n", $3);
-            insertIntoCurrentDirectiveList($3);
+            std::string sym_name = $3;
+            SymbolBinding bind = SymbolBinding::GLOB;
+            addSym(Sym(sym_name, bind));
+            reportGlobalSym(sym_name);
+      }
+;
+
+extern_symbol_list: SYMBOL {
+      printf("Found symbol %s\n", $1);
+      std::string sym_name = $1;
+      SymbolBinding bind = SymbolBinding::GLOB;
+      SymbolType type = SymbolType::NOTYPE;
+      const std::string sctn_name = UNDEFINED_SCTN;
+      addSym(Sym(sym_name, bind, type, sctn_name));
+      reportExternSym(sym_name);
+}
+      | extern_symbol_list COMMA SYMBOL {
+            printf("Found symbol %s\n", $3);
+            std::string sym_name = $3;
+            SymbolBinding bind = SymbolBinding::GLOB;
+            SymbolType type= SymbolType::NOTYPE;
+            const std::string sctn_name = UNDEFINED_SCTN;
+            addSym(Sym(sym_name, bind, type, sctn_name));
+            reportExternSym(sym_name);
       }
 ;
 
@@ -148,11 +189,20 @@ symbol_literal_list: sym_lit_list_leaf
       | symbol_literal_list COMMA sym_lit_list_leaf
 ;
 
-sym_lit_list_leaf: SYMBOL {printf("Found symbol %s\n", $1);}
-      | LITERAL {printf("Found literal %d\n", $1);}
+sym_lit_list_leaf: SYMBOL {
+      printf("Found symbol %s\n", $1);
+      uint32_t offset = location_counter;
+      std::string sym_name = $1;
+      RelocationType rela_type = RelocationType::R_X86_64_32; 
+      int32_t addend = 0;
+      reportSymUsage(sym_name, rela_type, addend);
+      }
+      | LITERAL {
+            printf("Found literal %d\n", $1);
+            writeWord(static_cast<uint32_t>($1));
+            adjustLocation(4);
+            }
 ;
-
-section_name: SYMBOL {printf("Found section with a symbol name %s\n", $1);};
 
 reg: gpr
       | csr
@@ -165,6 +215,51 @@ void yyerror(const char *s) {
     fprintf(stderr, "Parser error: %s\n", s);
 }
 
-int main() {
-    return yyparse();
+int main(int argc, char* argv[]) {
+    std::string input_file;
+    std::string output_file = "out.o"; // default
+
+    if (argc == 2) {
+        input_file = argv[1];
+    }
+    else if (argc == 4) {
+        if (std::string(argv[1]) == "-o") {
+            output_file = argv[2];
+            input_file = argv[3];
+        } else if (std::string(argv[2]) == "-o") {
+            input_file = argv[1];
+            output_file = argv[3];
+        } else {
+            std::cerr << "Greška: neispravna upotreba opcije -o\n";
+            return 1;
+        }
+    }
+    else {
+        std::cerr << "Greška: neispravan broj argumenata.\n";
+        std::cerr << "Korišćenje:\n";
+        std::cerr << "  ./asembler ulaz.s\n";
+        std::cerr << "  ./asembler -o izlaz.o ulaz.s\n";
+        return 1;
+    }
+
+    FILE* input = fopen(input_file.c_str(), "r");
+      if (!input) {
+      std::cerr << "Greška: ne mogu da otvorim ulaznu datoteku " << input_file << "\n";
+      return 1;
+      }
+
+      extern FILE* yyin;
+      yyin = input;
+    yyparse();
+
+    std::ofstream out(output_file);
+    if (!out) {
+        std::cerr << "Greška: ne mogu da otvorim izlaznu datoteku " << output_file << "\n";
+        return 1;
+    }
+
+    out.close();
+    fclose(yyin);
+
+    return 0;
 }

@@ -10,4 +10,6 @@ asembler: lex.yy.c asm.tab.c asm.tab.h
 	g++ -o asembler asm.tab.c lex.yy.c src/asembler.cpp
 clean:
 	rm asembler asm.tab.c lex.yy.c asm.tab.h asm.output
+	rm -rf output
+	rm out.o
 

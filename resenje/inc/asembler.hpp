@@ -1,70 +1,171 @@
 #pragma once
-#include <stdlib.h>
+
 #include <stdint.h>
-#include <string.h>
+#include <stdlib.h>
+#include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
-// enum RelocationType{
-//   R_X86_64_64,
-//   R_X86_64_PC64,
-//   R_X86_64_PC32,
-//   R_X86_64_32,
-//   R_X86_64_32S,
-//   R_X86_64_16,
-//   R_X86_64_PC16,
-//   R_X86_64_PC8,
-//   R_X86_64_8
-// };
+/**
+ * @brief Symbol visibility (binding) type
+ */
+enum SymbolBinding {
+  /// Local symbol
+  LOC,  
 
-// enum SymbolBinding{
-//   LOCAL,
-//   GLOBAL,
-//   UNKNOWN_BINDING
-// };
+  /// Global symbol
+  GLOB  
+};
 
-// enum SymbolType{
-//   NOTYPE,
-//   SECTION,
-//   OBJECT,
-//   FUNCTION,
-//   UNKNOWN_TYPE
-// };
+/**
+ * @brief Symbol type classification
+ */
+enum SymbolType {
+  /// No specific type
+  NOTYPE, 
 
-// struct Section{
-//   char* m_data;
-//   // add general info
-//   Section(char* a_data): m_data(a_data) {}
-// };
+  /// Type given to the sections
+  SCTN,   
 
-// struct Symbol{
-//   uint32_t m_num;
-//   uint32_t m_value;
-//   SymbolType m_type;
-//   SymbolBinding m_bind;
-//   uint32_t m_index;
-//   Symbol(uint32_t a_num, uint32_t a_value, SymbolType a_type, SymbolBinding a_bind, uint32_t a_index): 
-//     m_num(a_num), m_value(a_value), m_type(a_type), m_bind(a_bind), m_index(a_index) {}
-// };
+  /// Type given to the symbols
+  OBJ     
+};
 
-// struct Relocation{
-//   uint32_t m_offset;
-//   RelocationType m_type;
-//   uint32_t m_addend;
-//   Relocation(uint32_t a_offset, RelocationType a_type, uint32_t a_addend):
-//     m_offset(a_offset), m_type(a_type), m_addend(a_addend) {}
-// };
+/**
+ * @brief Type of relocation to apply during linking
+ */
+enum RelocationType {
+  /// Absolute 32-bit address of symbol
+  R_X86_64_32,   
 
-// std::unordered_map<std::string, Relocation> relocation_table;
-// std::unordered_map<std::string, Symbol> symbol_table;
-// std::vector<Section> sections;
-// uint32_t lc;
-void printSymbolLists();
-void insertIntoCurrentDirectiveList(const char* symbol);
-// void insertIntoSymbolTable(std::string a_name, Symbol a_symbol);
-// void insertIntoRelocationTable(std::string a_name, Relocation a_relocation);
+  /// PC-relative 32-bit offset from current location to symbol
+  R_X86_64_PC32  
+};
 
-extern std::vector<std::string> global_symbols;
-extern std::vector<std::string> extern_symbols;
+/**
+ * @brief Represents a forward reference to a symbol not yet defined
+ */
+struct ForwardReferenceEntry {
+  /// Section where the reference occurs
+  std::string m_sctn_name;       
 
-extern std::string current_directive;
+  /// Offset within the section needing relocation
+  uint32_t m_offset;             
+
+  /// Type of relocation to apply
+  RelocationType m_reloc_type;   
+
+  /// Additional constant to be added during relocation
+  int32_t m_addend;
+
+  ForwardReferenceEntry(const std::string& a_sctn_name, 
+    uint32_t a_offset,
+    RelocationType a_reloc_type,
+    int32_t a_addend) 
+    : m_sctn_name(a_sctn_name),
+      m_offset(a_offset),
+      m_reloc_type(a_reloc_type),
+      m_addend(a_addend) {}
+};
+
+/**
+ * @brief Represents a symbol table entry
+ */
+struct Sym {
+  /// Symbol name
+  std::string m_name;                   
+
+  /// Symbol binding
+  SymbolBinding m_bind;                           
+
+  /// Symbol type
+  SymbolType m_type;                 
+
+  /// Name of the section the symbol belongs to             
+  std::string m_sctn_name;                        
+
+  /// Value of the symbol
+  uint32_t m_value;                            
+
+  /// Whether the symbol is defined
+  bool m_defined;                                 
+
+  /// List of unresolved references to this symbol
+  std::vector<ForwardReferenceEntry> m_forward_ref_table; 
+
+  Sym(const std::string& name = "",
+        SymbolBinding bind = SymbolBinding::LOC,
+        SymbolType type = SymbolType::NOTYPE,
+        const std::string& sctn_name = "",
+        uint32_t value = 0,
+        bool defined = false)
+        : m_name(name),
+          m_bind(bind),
+          m_type(type),
+          m_sctn_name(sctn_name),
+          m_value(value),
+          m_defined(defined) {}
+};
+
+/**
+ * @brief Represents a relocation entry to be resolved during linking
+ */
+struct Rela {
+  /// Offset within the section where relocation is to be applied
+  uint32_t m_offset;
+
+  /// Name of the symbol being referenced
+  std::string m_sym_name;
+
+  /// Type of relocation to perform
+  RelocationType m_rela_type;
+
+  /// Additional constant to be added during relocation
+  int32_t m_addend;
+
+  Rela(uint32_t a_offset, 
+        std::string a_sym_name, 
+        RelocationType a_rela_type, 
+        int32_t a_addend) 
+        : m_offset(a_offset),
+          m_sym_name(a_sym_name),
+          m_rela_type(a_rela_type),
+          m_addend(a_addend) {}           
+};
+
+/**
+ * @brief Represents the usage of the literal 
+ */
+struct LiteralUsage{
+  /// Represents the place where literal is used
+  uint32_t m_offset;
+
+  /// Represents the literal value
+  uint32_t m_literal;
+};
+
+void addSym(Sym a_sym);
+void addRela(Rela a_rela);
+void openSection(std::string a_sctn_name);
+void writeByte(uint8_t a_byte);
+void writeWord(uint32_t a_word);
+void adjustLocation(uint32_t a_bytes);
+// void handleRelaBySymbolBinding(const std::string& a_sym_name, Rela& a_rela);
+void reportSymUsage(const std::string& a_sym_name, RelocationType a_reloc_type, int32_t a_addend);
+int8_t backPatch();
+void reportGlobalSym(const std::string& a_sym_name);
+void reportExternSym(const std::string& a_sym_name);
+void defineSym(const std::string& a_sym_name);
+
+extern uint32_t location_counter;
+extern std::unordered_map<std::string, Sym> sym_tab;
+extern const std::string UNDEFINED_SCTN;
+
+/**
+ * @brief temporary function
+ */
+void printSymbolTable();
+void printRela();
+void printSections();
+void printAll();
