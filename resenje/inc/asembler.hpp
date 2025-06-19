@@ -147,16 +147,28 @@ struct LiteralUsage{
 
 void addSym(Sym a_sym);
 void addRela(Rela a_rela);
-void openSection(std::string a_sctn_name);
+void openNewSection(std::string a_sctn_name);
+void closeCurrentSection();
 void writeByte(uint8_t a_byte);
 void writeWord(uint32_t a_word);
 void adjustLocation(uint32_t a_bytes);
 // void handleRelaBySymbolBinding(const std::string& a_sym_name, Rela& a_rela);
-void reportSymUsage(const std::string& a_sym_name, RelocationType a_reloc_type, int32_t a_addend);
+void reportSymUsage(const std::string& a_sym_name, RelocationType a_reloc_type, uint8_t a_reg_c, int32_t a_addend);
 int8_t backPatch();
 void reportGlobalSym(const std::string& a_sym_name);
 void reportExternSym(const std::string& a_sym_name);
 void defineSym(const std::string& a_sym_name);
+void reportLiteralUsage(uint32_t a_literal, uint8_t a_reg_c);
+void writeInstr(uint8_t a_oc, 
+  uint8_t a_mod, 
+  uint8_t a_reg_a, 
+  uint8_t a_reg_b,
+  uint8_t a_reg_c,
+  uint16_t a_disp);
+void writeFirstTwoBytesOfTheInstr(uint8_t a_oc, 
+  uint8_t a_mod, 
+  uint8_t a_reg_a, 
+  uint8_t a_reg_b);
 
 extern uint32_t location_counter;
 extern std::unordered_map<std::string, Sym> sym_tab;

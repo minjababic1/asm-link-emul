@@ -1,1 +1,7 @@
 .vscode
+asembler
+asm.output
+asm.tab.c
+asm.tab.h
+lex.yy.c
+.o

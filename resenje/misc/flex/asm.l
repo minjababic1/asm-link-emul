@@ -18,6 +18,7 @@ symbol      {alpha}{alphanum}*
 "jmp"       { return JMP; }
 "beq"       { return BEQ; }
 "bne"       { return BNE; }
+"bgt"       { return BGT; }
 "push"      { return PUSH; }
 "pop"       { return POP; }
 "xchg"      { return XCHG; }

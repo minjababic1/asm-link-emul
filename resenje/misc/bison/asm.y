@@ -12,6 +12,21 @@ int yylex(void);
 %union {
     char* str;
     int num;
+    struct jump_op {
+        bool is_symbol;
+        union {
+            int literal;
+            char* symbol;
+        };
+    } jop;
+    struct data_op {
+      int version;
+      int gpr;
+      union {
+            int literal;
+            char* symbol;
+        };
+    } dop;
 }
 
 %token <str> SYMBOL
@@ -23,141 +38,310 @@ int yylex(void);
 %token OPEN_SQUARE_BRACKET CLOSE_SQUARE_BRACKET
 %token PLUS
 
-// Instructions
-%token HALT INT IRET CALL RET JMP BEQ BNE
+%token HALT INT IRET CALL RET JMP BEQ BNE BGT
 %token PUSH POP XCHG ADD SUB MUL DIV
 %token NOT AND OR XOR SHL SHR
 %token LD ST CSRRD CSRWR
 
-// Directives
 %token GLOBAL EXTERN SECTION WORD SKIP END
 
-// Registers
 %token R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 SP R15 PC
 %token STATUS HANDLER CAUSE
 
+%type <jop> jump_operand
+%type <dop> data_operand
+%type <num> gpr
+%type <num> csr
 
 %start assembly_data
 
 %%
 
-assembly_data: {printf("EMPTY assembly_data\n");}| assembly_data assembly_line {printf("assembly_data assembly_line\n");}
+assembly_data: | assembly_data assembly_line;
 
-assembly_line: NEWLINE { printf("Parsed: NEWLINE\n\n"); }
-             | directive NEWLINE     { printf("Parsed: directive\n"); }
-             | statement NEWLINE      { printf("Parsed: statement\n"); }
-             | label NEWLINE      { printf("Parsed: label\n"); }
+assembly_line: NEWLINE
+             | directive NEWLINE
+             | statement NEWLINE
+             | label NEWLINE
 ;
 
 directive: DOT directive_line;
 
-statement: HALT {printf("HALT Instruction\n");}
-     | INT {printf("INT Instruction\n");}
-     | IRET {printf("IRET Instruction\n");}
-     | CALL jump_operand {printf("CALL Instruction\n");}
-     | RET {printf("RET Instruction\n");}
-     | JMP jump_operand {printf("JMP Instruction\n");}
-     | BEQ gpr COMMA gpr COMMA jump_operand {printf("BEQ Instruction\n");}
-     | BNE gpr COMMA gpr COMMA jump_operand {printf("BNE Instruction\n");}
-     | PUSH gpr {printf("PUSH Instruction\n");}
-     | POP gpr {printf("POP Instruction\n");}
-     | XCHG gpr COMMA gpr {printf("XCHG Instruction\n");}
-     | ADD gpr COMMA gpr {printf("ADD Instruction\n");}
-     | SUB gpr COMMA gpr {printf("SUB Instruction\n");}
-     | MUL gpr COMMA gpr {printf("MUL Instruction\n");}
-     | DIV gpr COMMA gpr {printf("DIV Instruction\n");}
-     | NOT gpr {printf("NOT Instruction\n");}
-     | AND gpr COMMA gpr {printf("AND Instruction\n");}
-     | OR gpr COMMA gpr {printf("OR Instruction\n");}
-     | XOR gpr COMMA gpr {printf("XOR Instruction\n");}
-     | SHL gpr COMMA gpr {printf("SHL Instruction\n");}
-     | SHR gpr COMMA gpr {printf("SHR Instruction\n");}
-     | LD data_operand COMMA gpr {printf("LD Instruction\n");}
-     | ST gpr COMMA data_operand {printf("ST Instruction\n");}
-     | CSRRD csr COMMA gpr {printf("CSRRD Instruction\n");}
-     | CSRWR gpr COMMA csr {printf("CSRWR Instruction\n");}
+statement: HALT {writeInstr(0x00, 0x00, 0x00, 0x00, 0x00, 0x0000);}
+     | INT {writeInstr(0x01, 0x00, 0x00, 0x00, 0x00, 0x0000);}
+     | IRET { 
+      writeInstr(0x09, 0x03, 0x0F, 0x0E, 0x00, 0x0004);
+      writeInstr(0x09, 0x07, 0x00, 0x0E, 0x00, 0x0004);
+      }
+     | CALL jump_operand {
+      if ($2.is_symbol){
+            writeFirstTwoBytesOfTheInstr(0x02, 0x00, 0x0F, 0x00);
+            reportSymUsage($2.symbol, RelocationType::R_X86_64_PC32, 0x00, 2);
+      } else {
+            writeFirstTwoBytesOfTheInstr(0x02, 0x01, 0x0F, 0x00);
+            reportLiteralUsage($2.literal, 0x00);
+      }
+      }
+     | RET {writeInstr(0x09, 0x03, 0x0F, 0x0E, 0x00, 0x0004);}
+     | JMP jump_operand {
+      writeFirstTwoBytesOfTheInstr(0x03, 0x00, 0x0F, 0x00);
+      if ($2.is_symbol){
+            reportSymUsage($2.symbol, RelocationType::R_X86_64_PC32, 0x00, 2);
+      } else {
+            reportLiteralUsage($2.literal, 0x00);
+      }
+      }
+     | BEQ gpr COMMA gpr COMMA jump_operand {
+      uint32_t reg_b = static_cast<uint32_t>($2);
+      uint32_t reg_c = static_cast<uint32_t>($4);
+      writeFirstTwoBytesOfTheInstr(0x03, 0x01, 0x0F, $2);
+      if ($6.is_symbol){
+            reportSymUsage($6.symbol, RelocationType::R_X86_64_PC32, $4, 2);
+      } else {
+            reportLiteralUsage($6.literal, $4);
+      }
+      }
+     | BNE gpr COMMA gpr COMMA jump_operand {
+      uint32_t reg_b = static_cast<uint32_t>($2);
+      uint32_t reg_c = static_cast<uint32_t>($4);
+      writeFirstTwoBytesOfTheInstr(0x03, 0x02, 0x0F, $2);
+      if ($6.is_symbol){
+            reportSymUsage($6.symbol, RelocationType::R_X86_64_PC32, $4, 2);
+      } else {
+            reportLiteralUsage($6.literal, $4);
+      }
+      }
+     | BGT gpr COMMA gpr COMMA jump_operand {
+      uint32_t reg_b = static_cast<uint32_t>($2);
+      uint32_t reg_c = static_cast<uint32_t>($4);
+      writeFirstTwoBytesOfTheInstr(0x03, 0x03, 0x0F, $2);
+      if ($6.is_symbol){
+            reportSymUsage($6.symbol, RelocationType::R_X86_64_PC32, $4, 2);
+      } else {
+            reportLiteralUsage($6.literal, $4);
+      }
+      }
+     | PUSH gpr {
+      writeInstr(0x08, 0x01, 0x0E, 0x00, $2, 0xFFFC);
+      }
+     | POP gpr {
+      writeInstr(0x09, 0x03, $2, 0x0E, 0x00, 0x0004);
+      }
+     | XCHG gpr COMMA gpr {
+      writeInstr(0x04, 0x00, 0x00, $2, $4, 0x0000);
+      }
+     | ADD gpr COMMA gpr {
+      writeInstr(0x05, 0x00, $4, $2, $4, 0x0000);
+      }
+     | SUB gpr COMMA gpr {
+      writeInstr(0x05, 0x01, $4, $2, $4, 0x0000);
+      }
+     | MUL gpr COMMA gpr {
+      writeInstr(0x05, 0x02, $4, $2, $4, 0x0000);
+      }
+     | DIV gpr COMMA gpr {
+      writeInstr(0x05, 0x03, $4, $2, $4, 0x0000);
+      }
+     | NOT gpr {
+      writeInstr(0x06, 0x00, $2, $2, 0x00, 0x0000);
+      }
+     | AND gpr COMMA gpr {
+      writeInstr(0x06, 0x01, $4, $2, $4, 0x0000);
+      }
+     | OR gpr COMMA gpr {
+      writeInstr(0x06, 0x02, $4, $2, $4, 0x0000);
+      }
+     | XOR gpr COMMA gpr {
+      writeInstr(0x06, 0x03, $4, $2, $4, 0x0000);
+      }
+     | SHL gpr COMMA gpr {
+      writeInstr(0x07, 0x00, $4, $4, $2, 0x000);
+      }
+     | SHR gpr COMMA gpr {
+      writeInstr(0x07, 0x01, $4, $4, $2, 0x000);
+      }
+     | LD data_operand COMMA gpr {
+      uint32_t lit_val = 0;
+      switch($2.version){
+            case 1:
+                  writeFirstTwoBytesOfTheInstr(0x09, 0x02, $4, 0x0F);
+                  reportLiteralUsage($2.literal, 0x00);
+                  break;
+            case 2:
+                  writeFirstTwoBytesOfTheInstr(0x09, 0x01, $4, 0x0F);
+                  reportSymUsage($2.symbol, RelocationType::R_X86_64_PC32, 0x00, 2);
+                  break;
+            case 3:
+                  writeFirstTwoBytesOfTheInstr(0x09, 0x02, $4, 0x0F);
+                  reportLiteralUsage($2.literal, 0x00);
+                  writeInstr(0x09, 0x02, $4, $4, 0x00, 0x0000);
+                  break;
+            case 4:
+                  writeFirstTwoBytesOfTheInstr(0x09, 0x01, $4, 0x0F);
+                  reportSymUsage($2.symbol, RelocationType::R_X86_64_PC32, 0x00, 2);
+                  writeInstr(0x09, 0x02, $4, $4, 0x00, 0x0000);
+                  break;
+            case 5:
+                  writeInstr(0x09, 0x01, $4, $2.gpr, 0x00, 0x0000);
+                  break;
+            case 6:
+                  writeInstr(0x09, 0x03, $4, $2.gpr, 0x00, 0x0000);
+                  break;
+            case 7:
+                  lit_val = static_cast<uint32_t>($2.literal);
+                  if ((lit_val <= 0x000007FF) || (lit_val >= 0xFFFFF800)) {
+                        writeInstr(0x09, 0x02, $4, $2.gpr, 0x00, static_cast<uint16_t>(lit_val && 0x0FFF));
+                  } else {
+                        printf("ERROR - Literal cannot fit in 12 bits!\n");
+                  }
+                 break;
+            case 8:
+                  writeFirstTwoBytesOfTheInstr(0x09, 0x02, $4, $2.gpr);
+                  reportSymUsage($2.symbol, RelocationType::R_X86_64_PC32, 0x0F, 2);
+                  break;
+            default:
+                  printf("INVALID FORMAT OF LD INSTR!\n");
+                   
+      }
+      }
+     | ST gpr COMMA data_operand {
+      uint32_t lit_val = 0;
+      switch($4.version){
+            case 3:
+                 writeFirstTwoBytesOfTheInstr(0x08, 0x02, 0x0F, 0x00);
+                 reportLiteralUsage($4.literal, $2);
+                 break;
+            case 4:
+                  writeFirstTwoBytesOfTheInstr(0x08, 0x00, 0x0F, 0x00);
+                  reportSymUsage($4.symbol, RelocationType::R_X86_64_PC32, $2, 2);
+                  break;
+            case 5:
+                  writeInstr(0x09, 0x01, $4.gpr, $2, 0x00, 0x0000);
+                  break;
+            case 6:
+                  writeInstr(0x08, 0x01, $4.gpr, 0x00, $2, 0x0000);
+                  break;
+            case 7:
+                  lit_val = static_cast<uint32_t>($4.literal);
+                  if ((lit_val <= 0x000007FF) || (lit_val >= 0xFFFFF800)) {
+                        writeInstr(0x08, 0x00, $4.gpr, 0x00, $2, static_cast<uint16_t>(lit_val && 0x0FFF));
+                  } else {
+                        printf("ERROR - Literal cannot fit in 12 bits!\n");
+                  }
+                 break;
+            case 8:
+                  writeFirstTwoBytesOfTheInstr(0x08, 0x00, 0x0F, 0x00);
+                  reportSymUsage($4.symbol, RelocationType::R_X86_64_PC32, $2, 2);
+                  break;
+            default:
+                  printf("INVALID FORMAT OF ST INSTR!\n");
+      }
+      }
+     | CSRRD csr COMMA gpr {
+      writeInstr(0x09, 0x00, $4, $2, 0x00, 0x0000);
+      }
+     | CSRWR gpr COMMA csr {
+      writeInstr(0x09, 0x04, $4, $2, 0x00, 0x0000);
+      }
 ;
 
-label: SYMBOL COLON { printf("Label with symbol %s\n", $1); defineSym($1); }
-     | SYMBOL COLON {defineSym($1);} statement { printf("Label with symbol %s\n", $1); }
-     | SYMBOL COLON {defineSym($1);} directive { printf("Label with symbol %s\n", $1); }
+label: SYMBOL COLON { defineSym($1); }
+     | SYMBOL COLON {defineSym($1);} statement
+     | SYMBOL COLON {defineSym($1);} directive
 ;
 
 
 directive_line: GLOBAL global_symbol_list {
-            printf("GLOBAL directive\n");
       }
       | EXTERN extern_symbol_list {
-            printf("EXTERN directive\n");
       }
       | SECTION SYMBOL {
-            printf("SECTION directive\n");
             std::string sym_name = $2;
             SymbolBinding bind = SymbolBinding::LOC;
             SymbolType type = SymbolType::SCTN;
             std::string sctn_name = sym_name;
             uint32_t value = 0;
             bool defined = true;
+            closeCurrentSection();
             addSym(Sym(sym_name, bind, type, sctn_name, value, defined));
-            openSection($2);
+            openNewSection($2);
             }
-      | WORD symbol_literal_list {printf("WORD directive\n");}
-      | SKIP LITERAL {printf("SKIP directive\n");}
-      | END {printf("END directive\n");
+      | WORD symbol_literal_list
+      | SKIP LITERAL {
+            for(uint8_t i = 0; i < $2; i++){
+                  writeByte(0x00);
+            }
+            adjustLocation($2);
+      }
+      | END {
+            closeCurrentSection();
             backPatch();
             printAll();
             return 0;
       }
 ;
 
-gpr: R0 
-      | R1 {printf("Found R1\n");}
-      | R2 {printf("Found R2\n");}
-      | R3 {printf("Found R3\n");}
-      | R4 {printf("Found R4\n");}
-      | R5 {printf("Found R5\n");}
-      | R6 {printf("Found R6\n");}
-      | R7 {printf("Found R7\n");}
-      | R8 {printf("Found R8\n");}
-      | R9 {printf("Found R9\n");}
-      | R10 {printf("Found R10\n");}
-      | R11 {printf("Found R11\n");}
-      | R12 {printf("Found R12\n");}
-      | R13 {printf("Found R13\n");}
-      | R14 {printf("Found R14\n");}
-      | SP {printf("Found SP\n");}
-      | R15 {printf("Found R15\n");}
-      | PC {printf("Found PC\n");}
+gpr:
+      R0   { $$ = 0; }
+    | R1   { $$ = 1; }
+    | R2   { $$ = 2; }
+    | R3   { $$ = 3; }
+    | R4   { $$ = 4; }
+    | R5   { $$ = 5; }
+    | R6   { $$ = 6; }
+    | R7   { $$ = 7; }
+    | R8   { $$ = 8; }
+    | R9   { $$ = 9; }
+    | R10  { $$ = 10; }
+    | R11  { $$ = 11; }
+    | R12  { $$ = 12; }
+    | R13  { $$ = 13; }
+    | SP   { $$ = 14; }
+    | R14  { $$ = 14; }
+    | PC   { $$ = 15; }
+    | R15  { $$ = 15; }
 ;
 
-csr: STATUS {printf("Found STATUS reg\n");}
-      | HANDLER {printf("Found HANDLER reg\n");}
-      | CAUSE {printf("Found CAUSE reg\n");}
+csr: STATUS {$$ = 0;}
+      | HANDLER {$$ = 1;}
+      | CAUSE {$$ = 2;}
 ;
 
-jump_operand: LITERAL {printf("Found literal %d\n", $1);}
-      | SYMBOL {printf("Found symbol %s\n", $1);}
+jump_operand: LITERAL {$$ = {false, .literal = $1};}
+      | SYMBOL {$$ = {true, .symbol = $1};}
 ;
 
-data_operand: DOLLAR LITERAL {printf("Found literal with dollar $ - $%d\n", $2);}
-      | DOLLAR SYMBOL {printf("Found symbol with dollar $ - $%s\n", $2);}
-      | LITERAL {printf("Found literal 0x%X\n", $1);}
-      | SYMBOL {printf("Found symbol %s\n", $1);}
-      | reg
-      | OPEN_SQUARE_BRACKET reg CLOSE_SQUARE_BRACKET
-      | OPEN_SQUARE_BRACKET reg PLUS LITERAL CLOSE_SQUARE_BRACKET {printf("reg + literal %d inside []", $4);}
-      | OPEN_SQUARE_BRACKET reg PLUS SYMBOL CLOSE_SQUARE_BRACKET {printf("reg + symbol %s inside []", $4);}
+data_operand: DOLLAR LITERAL {
+      $$ = {1, 0, .literal = $2};
+      }
+      | DOLLAR SYMBOL {
+            $$ = {2, 0, .symbol = $2};
+      }
+      | LITERAL {
+            $$ = {3, 0, .literal = $1};
+      }
+      | SYMBOL {
+            $$ = {4, 0, .symbol = $1};
+      }
+      | gpr {
+            $$ = {5, $1, .literal = -1};
+      }
+      | OPEN_SQUARE_BRACKET gpr CLOSE_SQUARE_BRACKET {$$ = {6, $2, .literal = 0};}
+      | OPEN_SQUARE_BRACKET gpr PLUS LITERAL CLOSE_SQUARE_BRACKET {
+            $$ = {7, $2, .literal = $4};
+            }
+      | OPEN_SQUARE_BRACKET gpr PLUS SYMBOL CLOSE_SQUARE_BRACKET {
+             $$ = {8, $2, .symbol = $4};
+            }
 ;
 
 global_symbol_list: SYMBOL {
-      printf("Found symbol %s\n", $1);
       std::string sym_name = $1;
       SymbolBinding bind = SymbolBinding::GLOB;
       addSym(Sym(sym_name, bind));
       reportGlobalSym(sym_name);
 }
       | global_symbol_list COMMA SYMBOL {
-            printf("Found symbol %s\n", $3);
             std::string sym_name = $3;
             SymbolBinding bind = SymbolBinding::GLOB;
             addSym(Sym(sym_name, bind));
@@ -166,7 +350,6 @@ global_symbol_list: SYMBOL {
 ;
 
 extern_symbol_list: SYMBOL {
-      printf("Found symbol %s\n", $1);
       std::string sym_name = $1;
       SymbolBinding bind = SymbolBinding::GLOB;
       SymbolType type = SymbolType::NOTYPE;
@@ -175,7 +358,6 @@ extern_symbol_list: SYMBOL {
       reportExternSym(sym_name);
 }
       | extern_symbol_list COMMA SYMBOL {
-            printf("Found symbol %s\n", $3);
             std::string sym_name = $3;
             SymbolBinding bind = SymbolBinding::GLOB;
             SymbolType type= SymbolType::NOTYPE;
@@ -190,24 +372,17 @@ symbol_literal_list: sym_lit_list_leaf
 ;
 
 sym_lit_list_leaf: SYMBOL {
-      printf("Found symbol %s\n", $1);
       uint32_t offset = location_counter;
       std::string sym_name = $1;
       RelocationType rela_type = RelocationType::R_X86_64_32; 
       int32_t addend = 0;
-      reportSymUsage(sym_name, rela_type, addend);
+      reportSymUsage(sym_name, rela_type, 0x00, addend);
       }
       | LITERAL {
-            printf("Found literal %d\n", $1);
             writeWord(static_cast<uint32_t>($1));
             adjustLocation(4);
             }
 ;
-
-reg: gpr
-      | csr
-;
-
 
 %%
 
@@ -217,7 +392,7 @@ void yyerror(const char *s) {
 
 int main(int argc, char* argv[]) {
     std::string input_file;
-    std::string output_file = "out.o"; // default
+    std::string output_file = "out.o";
 
     if (argc == 2) {
         input_file = argv[1];
