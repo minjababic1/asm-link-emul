@@ -6,22 +6,20 @@ std::unordered_map<std::string, std::vector<Rela>> rela_table;
 std::unordered_map<std::string, std::vector<uint8_t>> section_data_table;
 std::unordered_map<uint32_t, std::vector<uint32_t>> literal_usage_table;
 std::unordered_map<std::string, std::vector<uint32_t>> literal_pool;
-std::unordered_set<std::string> extern_symbols;
-std::unordered_set<std::string> global_symbols;
+std::unordered_map<std::string, std::vector<uint32_t>> symbol_usage_table;
+std::unordered_map<std::string, std::vector<std::string>> symbol_pool;
 
 std::string current_section = "";
 uint32_t location_counter = 0;
 uint32_t total_offset = 0;
 const std::string UNDEFINED_SCTN = "UND";
+const uint8_t INSTR_ADDEND = 2;
+const uint8_t DIR_ADDEND = 0;
 
-void addSym(Sym a_sym){
+void addSymbol(Sym a_sym){
   if( sym_tab.find(a_sym.m_name) == sym_tab.end()) {
     sym_tab[a_sym.m_name] = a_sym;
   }
-}
-
-void addRela(Rela a_rela){
-  rela_table[current_section].push_back(a_rela);
 }
 
 void openNewSection(std::string a_sctn_name){
@@ -31,14 +29,9 @@ void openNewSection(std::string a_sctn_name){
 }
 
 void closeCurrentSection(){
-  // jump over literal pool
-  if(literal_usage_table.size() > 0){
-    section_data_table[current_section].push_back(0x30);
-    section_data_table[current_section].push_back(0xF0);
-    uint16_t disp = literal_usage_table.size()*4;
-    section_data_table[current_section].push_back((static_cast<uint8_t>(disp >> 8)) & 0x0F);
-    section_data_table[current_section].push_back(static_cast<uint8_t>(disp & 0x00FF));
-    adjustLocation(4);
+  // jump over literal and symbol pool
+  if(literal_usage_table.size() > 0 || symbol_usage_table.size() > 0){
+    writeInstruction(0x03, 0x00, 0x0F, 0x00, 0x00, (literal_usage_table.size()+symbol_usage_table.size())*4);
   }
 
   // make usage of literal point to literal in the pool
@@ -49,13 +42,18 @@ void closeCurrentSection(){
       section_data_table[current_section][usage_addr] |= static_cast<uint8_t>((disp >> 8) & 0x0F);
       section_data_table[current_section][usage_addr+1] |= static_cast<uint8_t>(disp & 0x00FF);
     }
-    adjustLocation(4);
     literal_pool[current_section].push_back(kv.first);
+  }
+
+  for(const auto& kv : symbol_usage_table){
+    std::string sym_name = kv.first;
+    
   }
 }
 
 void writeByte(uint8_t a_byte){
   section_data_table[current_section].push_back(a_byte);
+  adjustLocation(1);
 }
 
 void writeWord(uint32_t a_word){
@@ -65,19 +63,24 @@ void writeWord(uint32_t a_word){
   writeByte(static_cast<uint8_t>((a_word >> 24) & 0xFF));
 }
 
+/**
+ * @brief Updates the location counter in the 
+ * current section for the given number of bytes
+ * 
+ * @param a_bytes Given number of bytes
+ */
 void adjustLocation(uint32_t a_bytes){
   location_counter+= a_bytes;
   total_offset+= a_bytes;
 }
 
-void reportSymUsage(const std::string& a_sym_name, RelocationType a_rela_type, uint8_t a_reg_c, int32_t a_addend){
+void handleSymbolUsage(const std::string& a_sym_name, RelocationType a_rela_type, uint8_t a_reg_c, int32_t a_addend){
   if(sym_tab.find(a_sym_name) != sym_tab.end() && sym_tab[a_sym_name].m_defined){
     Sym sym = sym_tab[a_sym_name];
     if(sym.m_sctn_name == current_section && a_rela_type == RelocationType::R_X86_64_PC32) {
       uint16_t disp = sym.m_value - location_counter - a_addend;
       writeByte((a_reg_c << 4) | (static_cast<uint8_t>(disp >> 8) & 0x0F));
       writeByte(static_cast<uint8_t>(disp & 0x00FF));
-      adjustLocation(2);
       return;
     } else{
       Rela rela = Rela(location_counter, a_sym_name, a_rela_type, a_addend);
@@ -90,11 +93,9 @@ void reportSymUsage(const std::string& a_sym_name, RelocationType a_rela_type, u
         uint16_t disp = sym.m_value - location_counter - a_addend;
         writeByte((a_reg_c << 4) | (static_cast<uint8_t>(disp >> 8) & 0x0F));
         writeByte(static_cast<uint8_t>(disp & 0x00FF));
-        adjustLocation(2);
         return;
       } else{
         writeWord(sym.m_value);
-        adjustLocation(4);
         return;
       }
     }
@@ -102,7 +103,7 @@ void reportSymUsage(const std::string& a_sym_name, RelocationType a_rela_type, u
     Sym sym;
     if(sym_tab.find(a_sym_name) == sym_tab.end()){
       sym = Sym(a_sym_name);
-      addSym(sym);
+      addSymbol(sym);
     } else {
       sym = sym_tab[a_sym_name];
     }
@@ -119,17 +120,22 @@ void reportSymUsage(const std::string& a_sym_name, RelocationType a_rela_type, u
         uint16_t disp = sym.m_value - location_counter - a_addend;
         writeByte((a_reg_c << 4) & 0xF0);
         writeByte(0x00);
-        adjustLocation(2);
         return;
       } else{
         writeWord(0x00000000);
-        adjustLocation(4);
         return;
     }
   }
 }
 
-
+/**
+ * @brief Updates content of the given section based on the other parameters
+ * 
+ * @param a_sctn_name Name of the updated section
+ * @param a_offset Place where section is updating
+ * @param a_word New content that is gonna be written
+ * @param a_reloc_type Type of relocation, determinates what is the width of the given content
+ */
 void updateSection(const std::string& a_sctn_name, uint32_t a_offset, uint32_t a_word, RelocationType a_reloc_type){
   if(a_reloc_type == RelocationType::R_X86_64_32){
     section_data_table[a_sctn_name][a_offset] = static_cast<uint8_t>(a_word & 0xFF);
@@ -147,7 +153,7 @@ void updateSection(const std::string& a_sctn_name, uint32_t a_offset, uint32_t a
   
 }
 
-int8_t backPatch(){
+int8_t applyBackpatching(){
   for(const auto& kv : sym_tab){
     Sym sym = kv.second;
     if(!sym.m_defined && sym.m_sctn_name != UNDEFINED_SCTN){
@@ -172,24 +178,16 @@ int8_t backPatch(){
   return 0;
 }
 
-void reportLiteralUsage(uint32_t a_literal, uint8_t a_reg_c){
+void handleLiteralUsage(uint32_t a_literal, uint8_t a_reg_c){
   a_reg_c &= 0x0F;
   literal_usage_table[a_literal].push_back(location_counter);
-  section_data_table[current_section].push_back((a_reg_c << 4));
-  section_data_table[current_section].push_back(0x00);
-  adjustLocation(2);
+  writeByte((a_reg_c << 4));
+  writeByte(0x00);
 }
 
-void reportGlobalSym(const std::string& a_sym_name){
-  global_symbols.insert(a_sym_name);
-}
-void reportExternSym(const std::string& a_sym_name){
-  extern_symbols.insert(a_sym_name);
-}
-
-void defineSym(const std::string& a_sym_name){
+void defineSymbol(const std::string& a_sym_name){
   if(sym_tab.find(a_sym_name) == sym_tab.end()){
-    addSym(Sym(a_sym_name));
+    addSymbol(Sym(a_sym_name));
   }
   Sym sym = sym_tab[a_sym_name];
   sym.m_sctn_name = current_section;
@@ -198,26 +196,127 @@ void defineSym(const std::string& a_sym_name){
   sym_tab[a_sym_name] = sym;
 }
 
-void writeInstr(uint8_t a_oc, 
+void writeInstruction(uint8_t a_oc, 
   uint8_t a_mod, 
   uint8_t a_reg_a, 
   uint8_t a_reg_b,
   uint8_t a_reg_c,
   uint16_t a_disp) {
-    writeFirstTwoBytesOfTheInstr(a_oc, a_mod, a_reg_a, a_reg_b);
-    writeByte((a_reg_c << 4) | ((static_cast<uint8_t>(a_disp >> 8)) & 0x0F));
-    writeByte(a_disp & 0x00FF);
-    adjustLocation(2);
+    writeInstructionFixedFields(a_oc, a_mod, a_reg_a, a_reg_b, a_reg_c);
+    patchDispField(a_disp);
   }
 
-void writeFirstTwoBytesOfTheInstr(uint8_t a_oc, 
+void writeInstructionFixedFields(uint8_t a_oc, 
   uint8_t a_mod, 
   uint8_t a_reg_a, 
-  uint8_t a_reg_b){
+  uint8_t a_reg_b,
+  uint8_t a_reg_c
+){
     writeByte((a_oc << 4) | a_mod);
     writeByte((a_reg_a << 4) | a_reg_b);
-    adjustLocation(2);
+    writeByte((a_reg_c << 4) & 0xF0);
+}
+
+void updateByte(const std::string& a_sctn_name, uint32_t a_offset, uint8_t a_byte){
+  section_data_table[a_sctn_name][a_offset] = a_byte;
+}
+
+/**
+ * @brief Patches the third byte and writes the fourth byte to complete 12-bit displacement.
+ * 
+ * @param a_disp Displacement value
+ **/ 
+void patchDispField(uint16_t a_disp) {
+    uint8_t regC_bits = section_data_table[current_section][location_counter - 1] & 0xF0;
+    uint8_t disp_high = static_cast<uint8_t>((a_disp >> 8) & 0x0F);
+    uint8_t third_byte = regC_bits | disp_high;
+
+    updateByte(current_section, location_counter - 1, third_byte);
+    writeByte(static_cast<uint8_t>(a_disp & 0x00FF));
+}
+
+void addRela(Sym a_sym, Rela& a_rela){
+  if(a_sym.m_bind == SymbolBinding::LOC){
+    a_rela.m_sym_name = a_sym.m_sctn_name;
+    a_rela.m_addend+= a_sym.m_value;
   }
+  rela_table[current_section].push_back(a_rela);
+}
+
+void addSymUsage(const std::string a_sym_name){
+  symbol_usage_table[a_sym_name].push_back(location_counter-1);
+}
+
+void addLiteralUsage(uint32_t a_literal){
+  literal_usage_table[a_literal].push_back(location_counter-1);
+}
+
+void addForwardReference(const std::string a_sym_name,
+  uint32_t a_offset,
+  RelocationType a_reloc_type,
+  int32_t a_addend
+){
+  Sym sym;
+  if(sym_tab.find(a_sym_name) == sym_tab.end()){
+    sym = Sym(a_sym_name);
+    addSymbol(sym);
+  } else {
+    sym = sym_tab[a_sym_name];
+  }
+  sym.m_forward_ref_table.push_back(
+    ForwardReferenceEntry(
+      current_section,
+      a_offset,
+      a_reloc_type,
+      a_addend
+    )
+  );
+  sym_tab[a_sym_name] = sym;
+}
+
+void writeEmptyDisp(){
+  writeByte(0x00);
+}
+
+/// Expected written first 3 bytes of the instruction
+void handleInstructionSymbol(const std::string& a_sym_name){
+  if(sym_tab.find(a_sym_name) != sym_tab.end() && sym_tab[a_sym_name].m_defined){
+    Sym sym = sym_tab[a_sym_name];
+    if(sym.m_sctn_name == current_section) {
+      uint32_t total_sym_val = sym_tab[sym.m_sctn_name].m_value + sym.m_value;
+      uint16_t disp = total_sym_val - total_offset - INSTR_ADDEND;
+      patchDispField(disp);
+    } else {
+      Rela rela = 
+        Rela(location_counter-1, a_sym_name, RelocationType::R_X86_64_PC32, INSTR_ADDEND);
+      addRela(sym, rela);
+      addSymUsage(sym.m_name);
+      writeEmptyDisp();
+    }
+  } else {
+    addForwardReference(a_sym_name, location_counter-1, RelocationType::R_X86_64_PC32, INSTR_ADDEND);
+    addSymUsage(a_sym_name);
+    writeEmptyDisp();
+  }
+}
+
+void handleDirectiveSymbol(const std::string& a_sym_name){
+  if(sym_tab.find(a_sym_name) != sym_tab.end() && sym_tab[a_sym_name].m_defined){
+    Sym sym = sym_tab[a_sym_name];
+    Rela rela = Rela(location_counter, a_sym_name, RelocationType::R_X86_64_32, DIR_ADDEND);
+    addRela(sym, rela);
+    writeWord(sym_tab[sym.m_sctn_name].m_value + sym.m_value);
+  } else {
+    addForwardReference(a_sym_name, location_counter, RelocationType::R_X86_64_32, DIR_ADDEND);
+    writeWord(0x00000000);
+  }
+}
+
+/// Expected written first 3 bytes of the instruction
+void handleInstructionLiteral(uint32_t a_literal){
+  addLiteralUsage(a_literal);
+  writeEmptyDisp();
+}
 
 void printSymbolTable(){
   std::string label = "SYMTAB";

@@ -145,37 +145,107 @@ struct LiteralUsage{
   uint32_t m_literal;
 };
 
-void addSym(Sym a_sym);
-void addRela(Rela a_rela);
+/**
+ * @brief Adds symbol to the symbol table
+ * 
+ * @param a_sym Symbol that needs to be added
+ */
+void addSymbol(Sym a_sym);
+
+/**
+ * @brief Declares new section as the current section
+ * 
+ * @param a_sctn_name Name of the new section
+ */
 void openNewSection(std::string a_sctn_name);
+
+/**
+ * @brief Generates literal pool for the current section
+ */
 void closeCurrentSection();
+
+/**
+ * @brief Writes one byte in the current section
+ * 
+ * @param a_byte Byte that needs to be written
+ */
 void writeByte(uint8_t a_byte);
+
+/**
+ * @brief Writes one machine word(4 bytes) in the current section
+ * 
+ * @param a_word Word that needs to be written
+ */
 void writeWord(uint32_t a_word);
-void adjustLocation(uint32_t a_bytes);
-// void handleRelaBySymbolBinding(const std::string& a_sym_name, Rela& a_rela);
-void reportSymUsage(const std::string& a_sym_name, RelocationType a_reloc_type, uint8_t a_reg_c, int32_t a_addend);
-int8_t backPatch();
-void reportGlobalSym(const std::string& a_sym_name);
-void reportExternSym(const std::string& a_sym_name);
-void defineSym(const std::string& a_sym_name);
-void reportLiteralUsage(uint32_t a_literal, uint8_t a_reg_c);
-void writeInstr(uint8_t a_oc, 
+
+/**
+ * @brief Handles usage of the symbol in the instruction or directive based on the given parameters
+ * 
+ * @param a_sym_name Symbol which usage needs to be handled
+ * @param a_reloc_type Type of relocation, telling us how symbol is being used
+ * @param a_reg_c Value that needs to be written on the place of regC in the instruction
+ * @param a_addend Addend that needs to be written in relocation
+ */
+void handleSymbolUsage(const std::string& a_sym_name, RelocationType a_reloc_type, uint8_t a_reg_c, int32_t a_addend);
+
+/**
+ * @brief Handles forward reference for the every symbol in the symbol table
+ */
+int8_t applyBackpatching();
+
+/**
+ * @brief Updates information about symbol in symbol table
+ * 
+ * @param a_sym_name Name of the given symbol
+ */
+void defineSymbol(const std::string& a_sym_name);
+
+/**
+ * @brief Handles usage of the literal in the instruction or directive
+ * 
+ * @param a_literal Literal which usage needs to be handled
+ * @param a_reg_c Value that needs to be written on the place of regC in the instructions
+ */
+void handleLiteralUsage(uint32_t a_literal, uint8_t a_reg_c);
+
+/**
+ * @brief Writes instruction with the given parameters
+ * 
+ * @param a_oc Operation code
+ * @param a_mod Modificator of the instruction
+ * @param a_reg_a Index of the first gpr used in the instruction
+ * @param a_reg_b Index of the second gpr used in the instruction
+ * @param a_reg_c Index of the third gpr used in the instruction
+ * @param a_disp Displacement
+ */
+void writeInstruction(uint8_t a_oc, 
   uint8_t a_mod, 
   uint8_t a_reg_a, 
   uint8_t a_reg_b,
   uint8_t a_reg_c,
   uint16_t a_disp);
-void writeFirstTwoBytesOfTheInstr(uint8_t a_oc, 
+
+/**
+ * @brief Writes first half of the instruction with the given parameters
+ * 
+ * @param a_oc Operation code
+ * @param a_mod Modificator of the instruction
+ * @param a_reg_a Index of the first gpr used in the instruction
+ * @param a_reg_b Index of the second gpr used in the instruction
+ */
+void writeInstructionFixedFields(uint8_t a_oc, 
   uint8_t a_mod, 
   uint8_t a_reg_a, 
-  uint8_t a_reg_b);
+  uint8_t a_reg_b,
+  uint8_t a_reg_c
+);
 
 extern uint32_t location_counter;
 extern std::unordered_map<std::string, Sym> sym_tab;
 extern const std::string UNDEFINED_SCTN;
 
 /**
- * @brief temporary function
+ * @brief temporary functions
  */
 void printSymbolTable();
 void printRela();
