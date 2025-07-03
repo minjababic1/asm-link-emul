@@ -9,7 +9,7 @@ LINK := linker
 EMU := emulator
 
 
-all: clean $(BUILD_DIR)/$(LINK)
+all: clean $(BUILD_DIR)/$(EMU)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -29,6 +29,9 @@ $(BUILD_DIR)/$(ASM): $(BUILD_DIR)/lex.yy.c $(BUILD_DIR)/asm.tab.c $(BUILD_DIR)/a
 $(BUILD_DIR)/$(LINK): $(BUILD_DIR)/$(ASM)
 	g++ -std=c++17 -o $(BUILD_DIR)/$(LINK) $(SRC_DIR)/linker.cpp $(SRC_DIR)/common.cpp
 
+$(BUILD_DIR)/$(EMU): $(BUILD_DIR)/$(LINK)
+	g++ -std=c++17 -o $(BUILD_DIR)/$(EMU) $(SRC_DIR)/emulator.cpp
+
 nivo-a: all
 	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/main.o $(TEST_DIR)/$(NIVO_A)/main.s
 	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/math.o $(TEST_DIR)/$(NIVO_A)/math.s
@@ -40,6 +43,7 @@ nivo-a: all
 		-place=my_code@0x40000000 -place=math@0xF0000000 \
 		$(BUILD_DIR)/handler.o $(BUILD_DIR)/math.o $(BUILD_DIR)/main.o \
 		$(BUILD_DIR)/isr_terminal.o $(BUILD_DIR)/isr_timer.o $(BUILD_DIR)/isr_software.o
+	./$(BUILD_DIR)/$(EMU) $(BUILD_DIR)/program.hex
 
 clean:
 	rm -rf $(BUILD_DIR)

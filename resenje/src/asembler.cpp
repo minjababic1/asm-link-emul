@@ -1,4 +1,5 @@
 #include "../inc/asembler.hpp"
+#include "../inc/instructions.hpp"
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -15,18 +16,10 @@ std::vector<std::string> sections;
 std::string current_section = "";
 uint32_t location_counter = 0;
 uint32_t total_offset = 0;
+const uint8_t INSTR_SIZE = 4;
 const uint8_t INSTR_ADDEND = 2;
 const uint8_t DIR_ADDEND = 0;
 uint32_t defined_sym_cnt = 0;
-
-/**
- * @brief Returns wheter symbol is defined in symbol table or not
- * 
- * @param a_sym_name Name of the given symbol
- */
-bool symbolDefined(const std::string& a_sym_name) {
-  return sym_tab.find(a_sym_name) != sym_tab.end() && sym_tab[a_sym_name].m_defined;
-}
 
 /**
  * @brief Updates the location counter in the 
@@ -37,6 +30,45 @@ bool symbolDefined(const std::string& a_sym_name) {
 void adjustLocation(uint32_t a_bytes){
   location_counter+= a_bytes;
   total_offset+= a_bytes;
+}
+
+void writeByte(uint8_t a_byte){
+  section_data_table[current_section].push_back(a_byte);
+  adjustLocation(1);
+}
+
+void writeWord(uint32_t a_word){
+  writeByte(static_cast<uint8_t>(a_word & 0xFF));
+  writeByte(static_cast<uint8_t>((a_word >> 8) & 0xFF));
+  writeByte(static_cast<uint8_t>((a_word >> 16) & 0xFF));
+  writeByte(static_cast<uint8_t>((a_word >> 24) & 0xFF));
+}
+
+uint8_t readByte(const std::string& a_sctn_name, uint32_t a_addr) {
+  return section_data_table[a_sctn_name][a_addr];
+}
+
+uint32_t readWord(const std::string& a_sctn_name, uint32_t a_addr) {
+  return static_cast<uint32_t>(readByte(a_sctn_name, a_addr)) |
+    (static_cast<uint32_t>(readByte(a_sctn_name, a_addr + 1)) << 8) |
+    (static_cast<uint32_t>(readByte(a_sctn_name, a_addr + 2)) << 16) |
+    (static_cast<uint32_t>(readByte(a_sctn_name, a_addr + 3)) << 24);
+}
+
+uint32_t readInstr(const std::string& a_sctn_name, uint32_t a_addr) {
+  return (static_cast<uint32_t>(readByte(a_sctn_name, a_addr)) << 24) |
+    (static_cast<uint32_t>(readByte(a_sctn_name, a_addr + 1)) << 16) |
+    (static_cast<uint32_t>(readByte(a_sctn_name, a_addr + 2)) << 8) |
+    static_cast<uint32_t>(readByte(a_sctn_name, a_addr + 3));
+}
+
+/**
+ * @brief Returns wheter symbol is defined in symbol table or not
+ * 
+ * @param a_sym_name Name of the given symbol
+ */
+bool symbolDefined(const std::string& a_sym_name) {
+  return sym_tab.find(a_sym_name) != sym_tab.end() && sym_tab[a_sym_name].m_defined;
 }
 
 void insertSymbolIfAbsent(Sym a_sym){
@@ -124,6 +156,32 @@ void patchDispField(const std::string a_sctn_name, uint32_t a_offset, uint16_t a
     updateByte(section_data_table, a_sctn_name, a_offset + 1, disp_low);
 }
 
+/**
+ * @brief Patches the mod field of the instruction when symbol is defined in the same section
+ * 
+ * @param a_instr_addr Address of the instruction
+ */
+void patchModField(uint32_t a_instr_addr) {
+  uint32_t instr = readInstr(current_section, a_instr_addr);
+  int oc = static_cast<int>((instr >> 28) & 0xF);
+  uint8_t mod_val = static_cast<uint8_t>((instr >> 24) & 0xF); 
+  switch (oc) {
+    case OpCode::CALL:
+    case OpCode::LD:
+      mod_val-= 1;
+      break;
+    case OpCode::ST:
+      mod_val-= 2;
+      break;
+    case OpCode::JMP:
+      mod_val-= 4;
+      break;
+    default:
+      return;
+  }
+  updateByte(section_data_table, current_section, a_instr_addr, (oc << 4) | (mod_val & 0x0F));
+}
+
 void closeCurrentSection(){
   uint32_t symbol_pool_size = 0;
   for(const auto& [sym_name, usages] : symbol_usages_table){
@@ -151,8 +209,13 @@ void closeCurrentSection(){
   for(const auto& [sym_name, usages] : symbol_usages_table){
     bool defined_after_usage = symbolDefined(sym_name);
     for(const auto& usage_addr : usages){
-      uint16_t disp = defined_after_usage? 
-        sym_tab[sym_name].m_value - usage_addr - INSTR_ADDEND :  location_counter - usage_addr - INSTR_ADDEND;
+      uint16_t disp;
+      if (defined_after_usage) {
+        disp = sym_tab[sym_name].m_value - usage_addr - INSTR_ADDEND;
+        patchModField(usage_addr - 2);
+      } else {
+        disp = location_counter - usage_addr - INSTR_ADDEND;;
+      }
       patchDispField(current_section, usage_addr, disp);
     }
     if(!defined_after_usage){
@@ -161,18 +224,6 @@ void closeCurrentSection(){
       symbol_pool[current_section].push_back(sym_name);
     }
   }
-}
-
-void writeByte(uint8_t a_byte){
-  section_data_table[current_section].push_back(a_byte);
-  adjustLocation(1);
-}
-
-void writeWord(uint32_t a_word){
-  writeByte(static_cast<uint8_t>(a_word & 0xFF));
-  writeByte(static_cast<uint8_t>((a_word >> 8) & 0xFF));
-  writeByte(static_cast<uint8_t>((a_word >> 16) & 0xFF));
-  writeByte(static_cast<uint8_t>((a_word >> 24) & 0xFF));
 }
 
 int8_t applyBackpatching(){
@@ -228,6 +279,7 @@ void handleInstructionSymbol(const std::string& a_sym_name){
   if(symbolDefined(a_sym_name) && sym_tab[a_sym_name].m_sctn_name == current_section){
     uint16_t disp = sym_tab[a_sym_name].m_value - location_counter;
     patchDispField(current_section, location_counter - INSTR_ADDEND, disp);
+    patchModField(location_counter - INSTR_SIZE);
   } else {
     addSymUsage(a_sym_name);
   }

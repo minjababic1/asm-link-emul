@@ -11,7 +11,6 @@ my_start:
     ld $0xFFFFFEFE, %sp
     ld $handler, %r1
     csrwr %r1, %handler
-
     int # software interrupt
 
     ld $1, %r1

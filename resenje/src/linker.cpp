@@ -367,6 +367,7 @@ void applyRelocations() {
 int main(int argc, char* argv[]) {
   std::vector<std::string> input_files;
   std::string output_file = "build/program.hex";
+  std::ofstream out(output_file);
   bool hex_mode = false;
   handleArguments(argc, argv, input_files, output_file, hex_mode);
 
@@ -393,7 +394,5 @@ int main(int argc, char* argv[]) {
   updateSymTab();
   applyRelocations();
 
-  writeSymTab(std::cout, linker_sym_tab);
-  // writeRela(std::cout, linker_section_relas_table, linker_sections);
-  writeSections(std::cout, linker_section_data_table, linker_sections, linker_sym_tab, true);
+  writeSections(out, linker_section_data_table, linker_sections, linker_sym_tab, true);
 }

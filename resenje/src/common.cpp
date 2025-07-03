@@ -220,10 +220,13 @@ void writeSections(
   for (const auto& section : a_sections) {
     const auto addr = a_sym_tab[section].m_value;
     const auto& data = a_section_data_table[section];
+    
+    if (!a_hex_mode) {
+      a_out << "#." << section << "\n" << std::right;
+    }  
 
-    a_out << "#." << section << "\n" << std::right;
-
-    for (size_t i = 0; i < data.size(); ++i) {
+    size_t i = 0;
+    for (; i < data.size(); i++) {
       if (i % 8 == 0 && a_hex_mode) {
         a_out 
           << std::hex << std::setw(8) << std::setfill('0') << (addr + i) 
@@ -241,7 +244,20 @@ void writeSections(
       }
     }
 
-    if (data.size() % 8 != 0) {
+    if (a_hex_mode) {
+      for (; i % 8 != 0 ; i++) {
+        a_out << std::hex << std::uppercase << std::setw(2) << std::setfill('0')
+            << 0x00 << std::dec << std::setfill(' ');
+
+        if (i % 8 == 7) {
+          a_out << "\n";
+        } else if (i % 8 == 3) {
+          a_out << "   ";
+        } else {
+          a_out << " ";
+        }
+      }
+    } else if (data.size() % 8 != 0) {
       a_out << std::endl;
     }
   }
