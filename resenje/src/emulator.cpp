@@ -1,4 +1,5 @@
 #include "../inc/emulator.hpp"
+#include "../inc/emu_terminal.hpp"
 #include "../inc/instructions.hpp"
 
 #include <fstream>
@@ -8,6 +9,8 @@
 #include <string>
 
 Emulator emulator;
+const uint32_t termOut = 0xFFFFFF00;
+const uint32_t termIn = 0xFFFFFF04;
 
 int32_t handleArguments(int argc, char* argv[], std::string& a_input_file) {
   if (argc != 2) {
@@ -79,7 +82,7 @@ void showEmulatorState() {
   for (size_t i = 0 ; i < 4; i++) {
     for (size_t j = 0; j < 4; j++) {
       std::string gpr_out = "r" + std::to_string(i*4+j) + "=0x";
-      std::cout << std::right << std::setw(6) << std::setfill(' ') << gpr_out;
+      std::cout << std::uppercase << std::right << std::setw(6) << std::setfill(' ') << gpr_out;
       std::cout << std::setw(8) << std::hex << std::setfill('0') << emulator.m_gpr[i*4+j]
         << std::dec << std::setfill(' ');
       std::cout << "   ";
@@ -143,22 +146,14 @@ void pop(uint32_t& a_dst) {
 void execute() {
   emulator.m_gpr[PC] = 0x40000000;
   Instruction curr_instr;
-  int cnt = 0;
   do {
     curr_instr = loadInstr(emulator.m_gpr[PC]);
-    cnt++;
     switch (curr_instr.m_oc) 
     {
       case OpCode::HALT:
-        std::cout << "Izvrsena instrukcija HALT na " 
-        << std::hex << emulator.m_gpr[PC] - 4
-        << std::endl;
         break;
       case OpCode::INT:
         // push status; push pc; cause<=4; status<=status&(~0x1); pc<=handle;
-        std::cout << "Izvrsena instrukcija INT na " 
-        << std::hex << emulator.m_gpr[PC] - 4
-        << std::endl;
         push(emulator.m_csr[Csr::STATUS]);
         push(emulator.m_gpr[PC]);
         emulator.m_csr[Csr::CAUSE] = 0x00000004;
@@ -166,9 +161,6 @@ void execute() {
         emulator.m_gpr[PC] = emulator.m_csr[Csr::HANDLER];
         break;
       case OpCode::CALL:
-        std::cout << "Izvrsena instrukcija CALL na " 
-        << std::hex << emulator.m_gpr[PC] - 4
-        << std::endl;
         switch(curr_instr.m_mod) {
           case CallMod::CALL_PC_REL:
             // push pc; pc<=gpr[A]+gpr[B]+D;
@@ -185,9 +177,6 @@ void execute() {
         }
         break;
       case OpCode::JMP:
-        std::cout << "Izvrsena instrukcija JMP na " 
-        << std::hex << emulator.m_gpr[PC] - 4
-        << std::endl;
         switch(curr_instr.m_mod) {
           case JmpMod::JMP_PC_REL:
             // pc<=gpr[A]+D;
@@ -239,15 +228,9 @@ void execute() {
         break;
       case OpCode::XCHG:
         // temp<=gpr[B]; gpr[B]<=gpr[C]; gpr[C]<=temp;
-        std::cout << "Izvrsena instrukcija XCHG na " 
-        << std::hex << emulator.m_gpr[PC] - 4
-        << std::endl;
         std::swap(emulator.m_gpr[curr_instr.m_reg_b], emulator.m_gpr[curr_instr.m_reg_c]);
         break;
       case OpCode::ARITHMETIC:
-        std::cout << "Izvrsena instrukcija ARITHMETIC na " 
-        << std::hex << emulator.m_gpr[PC] - 4
-        << std::endl;
         switch(curr_instr.m_mod) {
           case ArithmeticMod::ADD:
             // gpr[A]<=gpr[B] + gpr[C];
@@ -272,9 +255,6 @@ void execute() {
         }
         break;
       case OpCode::LOGIC:
-        std::cout << "Izvrsena instrukcija LOGIC na " 
-        << std::hex << emulator.m_gpr[PC] - 4
-        << std::endl;
         switch(curr_instr.m_mod) {
           case LogicMod::NOT:
             // gpr[A]<=~gpr[B];
@@ -298,9 +278,6 @@ void execute() {
         }
         break;
       case OpCode::SHIFT:
-        std::cout << "Izvrsena instrukcija SHIFT na " 
-        << std::hex << emulator.m_gpr[PC] - 4
-        << std::endl;
         switch (curr_instr.m_mod) {
           case ShiftMod::SHL:
             // gpr[A]<=gpr[B] << gpr[C];
@@ -315,9 +292,6 @@ void execute() {
         }
         break;
       case OpCode::ST:
-        std::cout << "Izvrsena instrukcija ST na " 
-        << std::hex << emulator.m_gpr[PC] - 4
-        << std::endl;
         switch (curr_instr.m_mod) {
           case StMod::MEM_REL:
             // mem32[gpr[A]+gpr[B]+D]<=gpr[C];
@@ -330,20 +304,28 @@ void execute() {
             // gpr[A]<=gpr[A]+D; mem32[gpr[A]]<=gpr[C];
             emulator.m_gpr[curr_instr.m_reg_a]+= curr_instr.m_disp; 
             writeWord(emulator.m_gpr[curr_instr.m_reg_a], emulator.m_gpr[curr_instr.m_reg_c]);
+            break;
           case StMod::MEM_IND:
             // mem32[mem32[gpr[A]+gpr[B]+D]]<=gpr[C];
+            if (
+              readWord(
+                emulator.m_gpr[curr_instr.m_reg_a] + 
+                emulator.m_gpr[curr_instr.m_reg_b] + 
+                curr_instr.m_disp
+              ) == termOut
+              ) {
+              std::cout << static_cast<char>(emulator.m_gpr[curr_instr.m_reg_c] & 0xFF);
+            }
             writeWord(
               readWord(emulator.m_gpr[curr_instr.m_reg_a] + emulator.m_gpr[curr_instr.m_reg_b] + curr_instr.m_disp),
               emulator.m_gpr[curr_instr.m_reg_c]
             );
+            break;
           default:
             break;
         }
         break;
       case OpCode::LD:
-        std::cout << "Izvrsena instrukcija LD na " 
-        << std::hex << emulator.m_gpr[PC] - 4
-        << std::endl;
         switch (curr_instr.m_mod) {
           case LdMod::GPR_DIR:
             // gpr[A]<=csr[B];
@@ -390,8 +372,18 @@ void execute() {
       default:
         break;
     }
+    // std::cout << "Stigao do provere" << std::endl;
+    char c = getc(stdin);
+    if (c != EOF && !(emulator.m_csr[Csr::STATUS] & 0x2)) {
+      emulator.m_mem32[termIn] = static_cast<uint8_t>(c);
+      push(emulator.m_csr[Csr::STATUS]);
+      push(emulator.m_gpr[PC]);
+      emulator.m_csr[Csr::CAUSE] = 0x00000003;
+      emulator.m_csr[Csr::STATUS] = emulator.m_csr[Csr::STATUS] | 0x2;
+      emulator.m_gpr[PC] = emulator.m_csr[Csr::HANDLER];
+    } else {
+    }
   } while(curr_instr.m_oc != OpCode::HALT);
-  std::cout << "Izvrsilo se " << cnt << " instrukcija" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -405,9 +397,10 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
+  initTerminal();
+
   execute();
 
-  showMem32();
   showEmulatorState();
 
   return 0;

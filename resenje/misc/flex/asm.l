@@ -37,12 +37,14 @@ symbol      {alpha}{alphanum}*
 "csrrd"     { return CSRRD; }
 "csrwr"     { return CSRWR; }
 
-"global"   { return GLOBAL; }
-"extern"   { return EXTERN; }
-"section"  { return SECTION; }
-"word"     { return WORD; }
-"skip"     { return SKIP; }
-"end"      { return END; }
+".global"   { return GLOBAL; }
+".extern"   { return EXTERN; }
+".section"  { return SECTION; }
+".word"     { return WORD; }
+".skip"     { return SKIP; }
+".ascii"    { return ASCII; }
+".end"      { return END; }
+"\""({symbol}|[ ])+"\""   { yylval.str = strdup(yytext); return TEXT;}
 
 "%r0"       { return R0; }
 "%r1"       { return R1; }
@@ -67,7 +69,6 @@ symbol      {alpha}{alphanum}*
 "%handler"  { return HANDLER; }
 "%cause"    { return CAUSE; }
 
-"."         { return DOT; }
 ","         { return COMMA; }
 ":"         { return COLON; }
 "$"         { return DOLLAR; }

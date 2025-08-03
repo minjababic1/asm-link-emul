@@ -13,8 +13,9 @@ void int_(){
 }
 
 void iret_(){
-  writeInstruction(OpCode::LD, LdMod::GPR_MEM_IND_DISP, PC, SP, ZERO, WORD_SIZE);
-  writeInstruction(OpCode::LD, LdMod::CSR_MEM_IND_DISP, Csr::STATUS, SP, ZERO, WORD_SIZE);
+  writeInstruction(OpCode::LD, LdMod::CSR_MEM_IND, Csr::STATUS, SP, ZERO, WORD_SIZE);
+  writeInstruction(OpCode::LD, LdMod::GPR_MEM_IND_DISP, PC, SP, ZERO, 2 * WORD_SIZE);
+  // writeInstruction(OpCode::LD, LdMod::CSR_MEM_IND_DISP, Csr::STATUS, SP, ZERO, WORD_SIZE);
 }
 
 void call_(){

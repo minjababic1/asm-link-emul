@@ -1,4 +1,5 @@
 #include "../inc/asembler_dir.hpp"
+#include <iostream>
 
 void global_(const std::string& a_sym_name){
   insertSymbolIfAbsent(Sym(a_sym_name, SymbolBinding::GLOB));
@@ -25,6 +26,12 @@ void section_(const std::string& a_sym_name){
 void skip_(uint32_t a_literal){
   for(uint8_t i = 0; i < a_literal; i++){
         writeByte(0x00);
+  }
+}
+
+void ascii_(const std::string& a_word) {
+  for (char c : a_word) {
+    writeByte(c);
   }
 }
 

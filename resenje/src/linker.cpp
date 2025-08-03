@@ -1,5 +1,4 @@
 #include "../inc/common.hpp"
-#include "../inc/linker.hpp"
 #include "../inc/types.hpp"
 #include <algorithm>
 #include <fstream>
@@ -281,16 +280,17 @@ bool hasUndefinedSymbols(SymbolTable& a_sym_tab) {
 }
 
 void handleArguments(
-  int argc,
-  char* argv[],
-  std::vector<std::string>& input_files,
-  std::string& output_file,
-  bool& hex_mode
+  int a_argc,
+  char* a_argv[],
+  std::vector<std::string>& a_input_files,
+  std::string& a_output_file,
+  bool& a_hex_mode,
+  bool& a_reloc_mode
 ) {
-  for(uint8_t i = 1; i < argc; i++) {
-    std::string arg = std::string(argv[i]);
+  for(uint8_t i = 1; i < a_argc; i++) {
+    std::string arg = std::string(a_argv[i]);
     if (arg == "-o") {
-      output_file = std::string(argv[i+1]);
+      a_output_file = std::string(a_argv[i+1]);
       ++i;
     } else if (arg.find("-place=") != std::string::npos) {
       std::size_t delimeter_pos = arg.find("@");
@@ -300,9 +300,11 @@ void handleArguments(
         static_cast<uint32_t>(std::stoul(arg.substr(delimeter_pos + 1), nullptr, 0));
       linker_section_place_table.push_back(SectionPlace(scnt_name, addr));
     } else if (arg == "-hex") {
-      hex_mode = true;
+      a_hex_mode = true;
+    } else if (arg == "-relocatable") {
+      a_reloc_mode = true;
     } else {
-      input_files.push_back(arg);
+      a_input_files.push_back(arg);
     }
   }
 
@@ -367,12 +369,16 @@ void applyRelocations() {
 int main(int argc, char* argv[]) {
   std::vector<std::string> input_files;
   std::string output_file = "build/program.hex";
-  std::ofstream out(output_file);
   bool hex_mode = false;
-  handleArguments(argc, argv, input_files, output_file, hex_mode);
+  bool reloc_mode = false;
+  handleArguments(argc, argv, input_files, output_file, hex_mode, reloc_mode);
+  std::ofstream out(output_file);
 
-  if(!hex_mode) {
+  if(!hex_mode && !reloc_mode) {
     std::cerr << "Greska: Nije prosledjena opcija u kom modu linker treba da radi" << std::endl;
+    return 1;
+  } else if (hex_mode && reloc_mode) {
+    std::cerr << "Greska: Nije moguce odrediti u kom modu linker treba da radi" << std::endl;
     return 1;
   }
 
@@ -382,17 +388,23 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  if (hasUndefinedSymbols(linker_sym_tab)) {
-    return 1;
+  if (hex_mode) {
+    if (hasUndefinedSymbols(linker_sym_tab)) {
+      return 1;
+    }
+
+    if (!sortAndValidatePlaceSections()) {
+      return 1;
+    }
+
+    linkSectionToAddr();
+    updateSymTab();
+    applyRelocations();
+
+    writeSections(out, linker_section_data_table, linker_sections, linker_sym_tab, hex_mode);
+  } else if(reloc_mode) {
+    writeSymTab(out, linker_sym_tab);
+    writeRela(out, linker_section_relas_table, linker_sections);
+    writeSections(out, linker_section_data_table, linker_sections, linker_sym_tab, hex_mode);
   }
-
-  if (!sortAndValidatePlaceSections()) {
-    return 1;
-  }
-
-  linkSectionToAddr();
-  updateSymTab();
-  applyRelocations();
-
-  writeSections(out, linker_section_data_table, linker_sections, linker_sym_tab, true);
 }

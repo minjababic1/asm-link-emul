@@ -8,4 +8,5 @@ void word_(const std::string& a_sym_name);
 void word_(uint32_t a_literal);
 void section_(const std::string& a_sym_name);
 void skip_(uint32_t a_literal);
+void ascii_(const std::string& a_word);
 void end_();

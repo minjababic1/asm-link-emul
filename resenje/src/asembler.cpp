@@ -349,7 +349,7 @@ extern int yyparse();
 
 int main(int argc, char* argv[]) {
     std::string input_file;
-    std::string output_file = "out.o";
+    std::string output_file = "build/out.o";
 
     if (argc == 2) {
         input_file = argv[1];

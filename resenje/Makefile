@@ -2,6 +2,7 @@ BUILD_DIR := build
 SRC_DIR := src
 TEST_DIR := tests
 NIVO_A := nivo-a
+NIVO_B := nivo-b
 FLEX_SRC := misc/flex/asm.l
 BISON_SRC := misc/bison/asm.y
 ASM := asembler
@@ -30,7 +31,7 @@ $(BUILD_DIR)/$(LINK): $(BUILD_DIR)/$(ASM)
 	g++ -std=c++17 -o $(BUILD_DIR)/$(LINK) $(SRC_DIR)/linker.cpp $(SRC_DIR)/common.cpp
 
 $(BUILD_DIR)/$(EMU): $(BUILD_DIR)/$(LINK)
-	g++ -std=c++17 -o $(BUILD_DIR)/$(EMU) $(SRC_DIR)/emulator.cpp
+	g++ -std=c++17 -o $(BUILD_DIR)/$(EMU) $(SRC_DIR)/emulator.cpp $(SRC_DIR)/emu_terminal.cpp
 
 nivo-a: all
 	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/main.o $(TEST_DIR)/$(NIVO_A)/main.s
@@ -44,6 +45,35 @@ nivo-a: all
 		$(BUILD_DIR)/handler.o $(BUILD_DIR)/math.o $(BUILD_DIR)/main.o \
 		$(BUILD_DIR)/isr_terminal.o $(BUILD_DIR)/isr_timer.o $(BUILD_DIR)/isr_software.o
 	./$(BUILD_DIR)/$(EMU) $(BUILD_DIR)/program.hex
+
+nivo-b: all
+	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/main.o $(TEST_DIR)/$(NIVO_B)/main.s
+	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/handler.o $(TEST_DIR)/$(NIVO_B)/handler.s
+	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/isr_timer.o $(TEST_DIR)/$(NIVO_B)/isr_timer.s
+	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/isr_terminal.o $(TEST_DIR)/$(NIVO_B)/isr_terminal.s
+	./$(BUILD_DIR)/$(LINK) -hex -o $(BUILD_DIR)/program.hex \
+		-place=my_code@0x40000000 \
+		$(BUILD_DIR)/main.o $(BUILD_DIR)/isr_terminal.o $(BUILD_DIR)/isr_timer.o $(BUILD_DIR)/handler.o 
+	./$(BUILD_DIR)/$(EMU) $(BUILD_DIR)/program.hex
+	
+test-relocatable: $(BUILD_DIR)/$(EMU)
+	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/main.o $(TEST_DIR)/$(NIVO_A)/main.s
+	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/math.o $(TEST_DIR)/$(NIVO_A)/math.s
+	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/handler.o $(TEST_DIR)/$(NIVO_A)/handler.s
+	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/isr_timer.o $(TEST_DIR)/$(NIVO_A)/isr_timer.s
+	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/isr_terminal.o $(TEST_DIR)/$(NIVO_A)/isr_terminal.s
+	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/isr_software.o $(TEST_DIR)/$(NIVO_A)/isr_software.s
+	./$(BUILD_DIR)/$(LINK) -relocatable -o $(BUILD_DIR)/handler2.o $(BUILD_DIR)/handler.o
+	./$(BUILD_DIR)/$(LINK) -relocatable -o $(BUILD_DIR)/main2.o $(BUILD_DIR)/main.o
+	./$(BUILD_DIR)/$(LINK) -relocatable -o $(BUILD_DIR)/math2.o $(BUILD_DIR)/math.o
+	./$(BUILD_DIR)/$(LINK) -relocatable -o $(BUILD_DIR)/isr_software2.o $(BUILD_DIR)/isr_software.o
+	./$(BUILD_DIR)/$(LINK) -relocatable -o $(BUILD_DIR)/isr_terminal2.o $(BUILD_DIR)/isr_terminal.o
+	./$(BUILD_DIR)/$(LINK) -relocatable -o $(BUILD_DIR)/isr_timer2.o $(BUILD_DIR)/isr_timer.o
+	./$(BUILD_DIR)/$(LINK) -hex -o $(BUILD_DIR)/program2.hex \
+		-place=my_code@0x40000000 -place=math@0xF0000000 \
+		$(BUILD_DIR)/handler2.o $(BUILD_DIR)/math2.o $(BUILD_DIR)/main2.o \
+		$(BUILD_DIR)/isr_terminal2.o $(BUILD_DIR)/isr_timer2.o $(BUILD_DIR)/isr_software2.o
+	./$(BUILD_DIR)/$(EMU) $(BUILD_DIR)/program2.hex
 
 clean:
 	rm -rf $(BUILD_DIR)

@@ -23,20 +23,21 @@ int yylex(void);
 }
 
 %token <str> SYMBOL
+%token <str> TEXT
 %token <num> LITERAL
 %token NEWLINE
 
-%token DOT COMMA HASH
+%token COMMA HASH
 %token COLON DOLLAR PERCENT
 %token OPEN_SQUARE_BRACKET CLOSE_SQUARE_BRACKET
-%token PLUS
+%token PLUS DOUBLE_QUOTE
 
 %token HALT INT IRET CALL RET JMP BEQ BNE BGT
 %token PUSH POP XCHG ADD SUB MUL DIV
 %token NOT AND OR XOR SHL SHR
 %token LD ST CSRRD CSRWR
 
-%token GLOBAL EXTERN SECTION WORD SKIP END
+%token GLOBAL EXTERN SECTION WORD SKIP ASCII END
 
 %token R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 SP R15 PC
 %token STATUS HANDLER CAUSE
@@ -56,8 +57,6 @@ assembly_line: NEWLINE
              | statement NEWLINE
              | label NEWLINE
 ;
-
-directive: DOT directive_line;
 
 statement: HALT { halt_(); }
      | INT { int_(); }
@@ -175,18 +174,24 @@ label: SYMBOL COLON { defineSymbol($1, SymbolType::NOTYP); }
 ;
 
 
-directive_line: GLOBAL global_symbol_list {
+directive: GLOBAL global_symbol_list {
       }
       | EXTERN extern_symbol_list {
       }
       | SECTION SYMBOL {
             std::string sym_name = $2;
             section_(sym_name);
-            }
+      }
       | WORD word_list
       | SKIP LITERAL { 
             uint32_t literal = $2;
             skip_(literal);
+      }
+      | ASCII TEXT {
+            std::string text = $2;
+            uint8_t text_size = text.size();
+            std::string without_quotes = (text.substr(0, text_size-1)).substr(1);
+            ascii_(without_quotes);
       }
       | END {
             end_();
