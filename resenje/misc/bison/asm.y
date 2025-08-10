@@ -2,10 +2,15 @@
 #include "../inc/asembler.hpp"
 #include "../inc/asembler_dir.hpp"
 #include "../inc/asembler_instr.hpp"
+#include "../inc/types.hpp"
 #include <fstream>
 #include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+std::vector<char> equ_operations;
+std::vector<EquOperand> equ_operands;
 
 void yyerror(const char *s);
 int yylex(void);
@@ -30,14 +35,14 @@ int yylex(void);
 %token COMMA HASH
 %token COLON DOLLAR PERCENT
 %token OPEN_SQUARE_BRACKET CLOSE_SQUARE_BRACKET
-%token PLUS DOUBLE_QUOTE
+%token PLUS MINUS DOUBLE_QUOTE
 
 %token HALT INT IRET CALL RET JMP BEQ BNE BGT
 %token PUSH POP XCHG ADD SUB MUL DIV
 %token NOT AND OR XOR SHL SHR
 %token LD ST CSRRD CSRWR
 
-%token GLOBAL EXTERN SECTION WORD SKIP ASCII END
+%token GLOBAL EXTERN SECTION WORD SKIP ASCII EQU END
 
 %token R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 SP R15 PC
 %token STATUS HANDLER CAUSE
@@ -193,6 +198,11 @@ directive: GLOBAL global_symbol_list {
             std::string without_quotes = (text.substr(0, text_size-1)).substr(1);
             ascii_(without_quotes);
       }
+      | EQU SYMBOL COMMA equ_expession {
+            equ_(EquRecord($2, equ_operands, equ_operations));
+            equ_operands.clear();
+            equ_operations.clear();
+      }
       | END {
             end_();
             return 0;
@@ -248,6 +258,9 @@ data_operand: DOLLAR LITERAL {
       | OPEN_SQUARE_BRACKET gpr PLUS LITERAL CLOSE_SQUARE_BRACKET {
             $$ = {7, $2, $4, NULL};
             }
+      | OPEN_SQUARE_BRACKET gpr PLUS SYMBOL CLOSE_SQUARE_BRACKET {
+            $$ = {8, $2, 0, $4};
+      }
 ;
 
 global_symbol_list: SYMBOL {
@@ -284,6 +297,16 @@ word_list_leaf: SYMBOL {
       }
 ;
 
+equ_expession: equ_operand
+      | equ_expession equ_operation equ_operand;
+
+equ_operand: SYMBOL { equ_operands.push_back(EquOperand(false, $1)); }
+      | LITERAL { equ_operands.push_back(EquOperand(true, std::to_string($1))); }
+;
+
+equ_operation: PLUS { equ_operations.push_back('+'); } 
+      | MINUS { equ_operations.push_back('-'); } 
+;
 %%
 
 void yyerror(const char *s) {

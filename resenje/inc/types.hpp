@@ -137,6 +137,38 @@ struct SectionPlace{
     : m_sctn_name(a_sctn_name), m_addr(a_addr) {}
 };
 
+struct EquOperand{
+  bool m_is_literal;
+  std::string m_representation;
+  EquOperand(bool a_is_literal, std::string a_representation)
+    : m_is_literal(a_is_literal), m_representation(a_representation) {}
+};
+
+struct EquRecord{
+  std::string m_equ_symbol;
+  std::vector<EquOperand> m_operands;
+  std::vector<char> m_operations;
+  EquRecord(
+    std::string a_equ_symbol,
+    std::vector<EquOperand> a_operands,
+    std::vector<char> a_operations) 
+    : m_equ_symbol(a_equ_symbol), m_operands(a_operands), m_operations(a_operations) {}
+};
+
+struct EquComputation{
+  bool m_is_computable;
+  int32_t m_value;
+  EquComputation(bool a_is_computable, int32_t a_value)
+    : m_is_computable(a_is_computable), m_value(a_value) {}
+};
+
+struct EquUsage{
+  std::string m_equ_symbol;
+  SectionPlace m_section_place;
+  EquUsage(std::string a_equ_symbol, SectionPlace a_section_place)
+    : m_equ_symbol(a_equ_symbol), m_section_place(a_section_place) {}
+};
+
 using SymbolTable = std::unordered_map<std::string, Sym>;
 using SectionRelasTable = std::unordered_map<std::string, std::vector<Rela>>;
 using SectionDataTable = std::unordered_map<std::string, std::vector<uint8_t>>;
@@ -146,3 +178,6 @@ using SymbolUsagesTable = std::unordered_map<std::string, std::vector<uint32_t>>
 using SectionSymbolsTable = std::unordered_map<std::string, std::vector<std::string>>;
 using SectionPlaceTable = std::vector<SectionPlace>;
 using SymbolList = std::vector<Sym>; 
+using NonComputableSymbolTable = std::vector<EquRecord>;
+using EquUsages = std::vector<EquUsage>;
+

@@ -1,3 +1,4 @@
+#include "../inc/asembler.hpp"
 #include "../inc/asembler_instr.hpp"
 #include "../inc/instructions.hpp"
 
@@ -102,6 +103,7 @@ void ld_(
   uint8_t a_gpr_d
 ){
   uint32_t lit_val = 0;
+  uint32_t sym_val = 0;
   switch(a_version){
         case 1:
               writeInstructionFixedFields(OpCode::LD, LdMod::GPR_MEM_IND, a_gpr_d, PC, ZERO);
@@ -135,6 +137,17 @@ void ld_(
                     printf("ERROR - Literal cannot fit in 12 bits!\n");
               }
               break;
+        case 8:
+              sym_val = getSymbolValue(a_sym_name);
+              if (isSymbolDefined(a_sym_name) && getSymbolSection(a_sym_name) == "#EQU") {
+                if (sym_val <= 0xFFF) {
+                  writeInstruction(OpCode::LD, LdMod::GPR_MEM_IND, a_gpr_d, a_gpr, ZERO, static_cast<uint16_t>(sym_val & 0x0FFF));
+                } else {
+                  printf("ERROR - Symbol value cannot fit in 12 bits!\n");
+                }
+              } else {
+                printf("ERROR - Symbol value is not known in the compile time!\n");
+              }
         default:
               printf("INVALID FORMAT OF LD INSTR!\n"); 
   }
@@ -148,6 +161,7 @@ void st_(
   uint8_t a_gpr_s
 ){
   uint32_t lit_val = 0;
+  uint32_t sym_val = 0;
   switch(a_version){
         case 3:
               writeInstructionFixedFields(OpCode::ST, StMod::MEM_IND, PC, ZERO, a_gpr_s);
@@ -171,6 +185,17 @@ void st_(
                     printf("ERROR - Literal cannot fit in 12 bits!\n");
               }
               break;
+        case 8:
+              sym_val = getSymbolValue(a_sym_name);
+              if (isSymbolDefined(a_sym_name) && getSymbolSection(a_sym_name) == "#EQU") {
+                if (sym_val <= 0xFFF) {
+                  writeInstruction(OpCode::ST, StMod::MEM_REL, a_gpr, ZERO, a_gpr_s, static_cast<uint16_t>(sym_val && 0x0FFF));
+                } else {
+                  printf("ERROR - Symbol value cannot fit in 12 bits!\n");
+                }
+              } else {
+                printf("ERROR - Symbol value is not known in the compile time!\n");
+              }
         default:
               printf("INVALID FORMAT OF ST INSTR!\n");
   }

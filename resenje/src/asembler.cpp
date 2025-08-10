@@ -12,6 +12,7 @@ SectionLiteralsTable literal_pool;
 SymbolUsagesTable symbol_usages_table;
 SectionSymbolsTable symbol_pool;
 std::vector<std::string> sections;
+NonComputableSymbolTable non_computable_symbols;
 
 std::string current_section = "";
 uint32_t location_counter = 0;
@@ -62,11 +63,6 @@ uint32_t readInstr(const std::string& a_sctn_name, uint32_t a_addr) {
     static_cast<uint32_t>(readByte(a_sctn_name, a_addr + 3));
 }
 
-/**
- * @brief Returns wheter symbol is defined in symbol table or not
- * 
- * @param a_sym_name Name of the given symbol
- */
 bool symbolDefined(const std::string& a_sym_name) {
   return sym_tab.find(a_sym_name) != sym_tab.end() && sym_tab[a_sym_name].m_defined;
 }
@@ -182,10 +178,28 @@ void patchModField(uint32_t a_instr_addr) {
   updateByte(section_data_table, current_section, a_instr_addr, (oc << 4) | (mod_val & 0x0F));
 }
 
+std::string getSymbolSection(const std::string& a_sym_name) {
+  if (sym_tab.find(a_sym_name) != sym_tab.end()) {
+    return sym_tab[a_sym_name].m_sctn_name;
+  }
+  return UNDEFINED_SCTN;
+}
+
+bool isSymbolDefined(const std::string& a_sym_name) {
+  return sym_tab.find(a_sym_name) != sym_tab.end() && sym_tab[a_sym_name].m_defined;
+}
+
+uint32_t getSymbolValue(const std::string& a_sym_name) {
+  if (sym_tab.find(a_sym_name) != sym_tab.end()) {
+    return sym_tab[a_sym_name].m_value;
+  }
+  return 0;
+}
+
 void closeCurrentSection(){
   uint32_t symbol_pool_size = 0;
   for(const auto& [sym_name, usages] : symbol_usages_table){
-    if(!symbolDefined(sym_name)){
+    if(!symbolDefined(sym_name) || sym_tab[sym_name].m_sctn_name == "#EQU") {
       symbol_pool_size++;
     }
   }
@@ -208,9 +222,10 @@ void closeCurrentSection(){
   // make usage of the symbol point to the symbol in the pool
   for(const auto& [sym_name, usages] : symbol_usages_table){
     bool defined_after_usage = symbolDefined(sym_name);
+    bool is_equ = sym_tab[sym_name].m_sctn_name == "#EQU";
     for(const auto& usage_addr : usages){
       uint16_t disp;
-      if (defined_after_usage) {
+      if (defined_after_usage && sym_tab[sym_name].m_sctn_name == current_section && !is_equ) {
         disp = sym_tab[sym_name].m_value - usage_addr - INSTR_ADDEND;
         patchModField(usage_addr - 2);
       } else {
@@ -218,9 +233,13 @@ void closeCurrentSection(){
       }
       patchDispField(current_section, usage_addr, disp);
     }
-    if(!defined_after_usage){
+    if ((!is_equ && (!defined_after_usage || sym_tab[sym_name].m_sctn_name != current_section)) ||
+        (is_equ && !defined_after_usage)){
       addForwardReference(sym_name, location_counter, DIR_ADDEND);
       writeWord(0x00000000);
+      symbol_pool[current_section].push_back(sym_name);
+    } else if (defined_after_usage && is_equ) {
+      writeWord(sym_tab[sym_name].m_value);
       symbol_pool[current_section].push_back(sym_name);
     }
   }
@@ -231,9 +250,19 @@ int8_t applyBackpatching(){
     if(!symbolDefined(sym.m_name) && sym.m_sctn_name != UNDEFINED_SCTN){
       return 1;
     }
+    bool is_equ = sym.m_sctn_name == "#EQU";
     for(const auto& forward_ref : sym.m_forward_ref_table){
-      Rela rela = Rela(forward_ref.m_offset, sym.m_name, RelocationType::R_X86_64_32, forward_ref.m_addend);
-        addRela(sym, rela, forward_ref.m_sctn_name);
+      if (is_equ) {
+        updateWord(
+          section_data_table, 
+          forward_ref.m_sctn_name, 
+          forward_ref.m_offset, 
+          sym.m_value
+        );
+      } else {
+        Rela rela = Rela(forward_ref.m_offset, sym.m_name, RelocationType::R_X86_64_32, forward_ref.m_addend);
+          addRela(sym, rela, forward_ref.m_sctn_name);
+      }
     }
   }
   return 0;
@@ -281,6 +310,8 @@ void handleInstructionSymbol(const std::string& a_sym_name){
     patchDispField(current_section, location_counter - INSTR_ADDEND, disp);
     patchModField(location_counter - INSTR_SIZE);
   } else {
+    insertSymbolIfAbsent(Sym(a_sym_name));
+    bool is_equ = sym_tab[a_sym_name].m_sctn_name == "#EQU";
     addSymUsage(a_sym_name);
   }
 }
@@ -345,6 +376,68 @@ void writeObj(std::ofstream& a_out){
   writeSections(a_out, section_data_table, sections, sym_tab, false);
 }
 
+EquComputation computeEquValue(const EquRecord& a_equ_record) {
+  std::string operands_first_section = "";
+  bool is_computable = true;
+  int32_t value = 0;
+  
+  for (uint8_t i = 0; i < a_equ_record.m_operands.size(); i++) {
+    const char sign = i > 0 ? a_equ_record.m_operations[i - 1] : '+';
+    const EquOperand& operand = a_equ_record.m_operands[i];
+    
+    if (operand.m_is_literal) {
+      if (sign == '+') {
+        value += std::stoul(operand.m_representation);
+      } else if (sign == '-') {
+        value -= std::stoul(operand.m_representation); 
+      }
+    } else {
+      insertSymbolIfAbsent(Sym(operand.m_representation));
+      Sym sym = sym_tab[operand.m_representation];
+      if (symbolDefined(sym.m_name) && 
+          (operands_first_section == "" || sym.m_sctn_name == operands_first_section)) {
+        operands_first_section = sym.m_sctn_name;
+        if (sign == '+') {
+          value += sym.m_value;
+        } else if (sign == '-') {
+          value -= sym.m_value;
+        }
+      } else {
+        is_computable = false;
+        break;
+      }
+    }
+  }
+  
+  return EquComputation(is_computable, value);
+}
+
+int8_t resolveEqus() {
+  bool resolved_any = false;
+  do{
+    resolved_any = false;
+    for (auto it = non_computable_symbols.begin(); it != non_computable_symbols.end();) {
+      EquComputation equ_computation = computeEquValue(*it);
+      if (equ_computation.m_is_computable) {
+        Sym sym = sym_tab[it->m_equ_symbol];
+        sym.m_value = equ_computation.m_value;
+        sym.m_defined = true;
+        sym_tab[it->m_equ_symbol] = sym;
+        it = non_computable_symbols.erase(it);
+        resolved_any = true;
+      } else {
+        ++it;
+      }
+    }
+  } while (resolved_any);
+
+  if (non_computable_symbols.size() > 0) {
+    std::cerr << "Greška: Postoje equ direktive koje nisu izracunljive!\n";
+    return 1;
+  }
+  return 0;
+}
+
 extern int yyparse();
 
 int main(int argc, char* argv[]) {
@@ -380,6 +473,9 @@ int main(int argc, char* argv[]) {
     extern FILE* yyin;
     yyin = input;
     yyparse();
+    if (resolveEqus() == 1) {
+      return 1;
+    }
     if(applyBackpatching() == 1){
       std::cerr << "Greška: Postoji simbol koji nije eksterni i nije definisan " << output_file << "\n";
       return 1;

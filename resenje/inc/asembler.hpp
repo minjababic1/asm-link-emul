@@ -11,6 +11,13 @@
 void insertSymbolIfAbsent(Sym a_sym);
 
 /**
+ * @brief Returns wheter symbol is defined in symbol table or not
+ * 
+ * @param a_sym_name Name of the given symbol
+ */
+bool symbolDefined(const std::string& a_sym_name);
+
+/**
  * @brief Declares new section as the current section
  * 
  * @param a_sctn_name Name of the new section
@@ -71,6 +78,15 @@ int8_t applyBackpatching();
 void defineSymbol(const std::string& a_sym_name, SymbolType a_type);
 
 /**
+ * @brief Computes the value of the EQU directive if possible
+ * 
+ * @param a_equ_record EQU record containing the symbol and operands
+ * @return EquComputation Result of the computation, indicating if it was computable and the
+ * computed value
+ */
+EquComputation computeEquValue(const EquRecord& a_equ_record);
+
+/**
  * @brief Writes instruction with the given parameters
  * 
  * @param a_oc Operation code
@@ -102,3 +118,29 @@ void writeInstructionFixedFields(uint8_t a_oc,
   uint8_t a_reg_b,
   uint8_t a_reg_c
 );
+
+/**
+ * @brief Gets the section name of the given symbol
+ * 
+ * @param a_sym_name Name of the given symbol
+ * @return std::string Name of the section where the symbol is defined
+ */
+std::string getSymbolSection(const std::string& a_sym_name);
+
+/**
+ * @brief Checks if the symbol is defined in the symbol table
+ * 
+ * @param a_sym_name Name of the given symbol
+ * @return true If the symbol is defined
+ * @return false If the symbol is not defined
+ */
+bool isSymbolDefined(const std::string& a_sym_name);
+
+/**
+ * @brief Gets the value of the symbol from the symbol table
+ * 
+ * @param a_sym_name Name of the given symbol
+ * @return uint32_t Value of the symbol
+ */
+uint32_t getSymbolValue(const std::string& a_sym_name);
+

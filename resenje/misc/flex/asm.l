@@ -43,6 +43,7 @@ symbol      {alpha}{alphanum}*
 ".word"     { return WORD; }
 ".skip"     { return SKIP; }
 ".ascii"    { return ASCII; }
+".equ"      { return EQU; }
 ".end"      { return END; }
 "\""({symbol}|[ ])+"\""   { yylval.str = strdup(yytext); return TEXT;}
 
@@ -75,6 +76,7 @@ symbol      {alpha}{alphanum}*
 "["         { return OPEN_SQUARE_BRACKET; }
 "]"         { return CLOSE_SQUARE_BRACKET; }
 "+"         { return PLUS; }
+"-"         { return MINUS; }
 
 0[xX][0-9a-fA-F]+ {
     yylval.num = (int)strtol(yytext, NULL, 16);  // baza 16 za hex

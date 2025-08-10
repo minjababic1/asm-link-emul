@@ -347,7 +347,7 @@ void linkSectionToAddr() {
 
 void updateSymTab() {
   for (auto& [sym_name, sym] : linker_sym_tab) {
-    if (sym.m_type != SymbolType::SCTN) {
+    if (sym.m_type != SymbolType::SCTN && sym.m_sctn_name != "#EQU") {
       sym.m_value+= linker_sym_tab[sym.m_sctn_name].m_value;
     }
   }

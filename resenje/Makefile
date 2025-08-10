@@ -3,6 +3,7 @@ SRC_DIR := src
 TEST_DIR := tests
 NIVO_A := nivo-a
 NIVO_B := nivo-b
+NIVO_C := nivo-c
 FLEX_SRC := misc/flex/asm.l
 BISON_SRC := misc/bison/asm.y
 ASM := asembler
@@ -51,6 +52,16 @@ nivo-b: all
 	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/handler.o $(TEST_DIR)/$(NIVO_B)/handler.s
 	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/isr_timer.o $(TEST_DIR)/$(NIVO_B)/isr_timer.s
 	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/isr_terminal.o $(TEST_DIR)/$(NIVO_B)/isr_terminal.s
+	./$(BUILD_DIR)/$(LINK) -hex -o $(BUILD_DIR)/program.hex \
+		-place=my_code@0x40000000 \
+		$(BUILD_DIR)/main.o $(BUILD_DIR)/isr_terminal.o $(BUILD_DIR)/isr_timer.o $(BUILD_DIR)/handler.o 
+	./$(BUILD_DIR)/$(EMU) $(BUILD_DIR)/program.hex
+
+nivo-c: all
+	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/main.o $(TEST_DIR)/$(NIVO_C)/main.s
+	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/handler.o $(TEST_DIR)/$(NIVO_C)/handler.s
+	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/isr_timer.o $(TEST_DIR)/$(NIVO_C)/isr_timer.s
+	./$(BUILD_DIR)/$(ASM) -o $(BUILD_DIR)/isr_terminal.o $(TEST_DIR)/$(NIVO_C)/isr_terminal.s
 	./$(BUILD_DIR)/$(LINK) -hex -o $(BUILD_DIR)/program.hex \
 		-place=my_code@0x40000000 \
 		$(BUILD_DIR)/main.o $(BUILD_DIR)/isr_terminal.o $(BUILD_DIR)/isr_timer.o $(BUILD_DIR)/handler.o 

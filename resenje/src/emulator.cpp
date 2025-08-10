@@ -1,16 +1,33 @@
 #include "../inc/emulator.hpp"
 #include "../inc/emu_terminal.hpp"
 #include "../inc/instructions.hpp"
-
+#include <chrono>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 
 Emulator emulator;
-const uint32_t termOut = 0xFFFFFF00;
-const uint32_t termIn = 0xFFFFFF04;
+const uint32_t term_out = 0xFFFFFF00;
+const uint32_t term_in = 0xFFFFFF04;
+const uint32_t tim_cfg = 0xFFFFFF10;
+
+const uint32_t TIMER_MASK = 0x00000001;
+const uint32_t TERMINAL_MASK = 0x00000002;
+const uint32_t INTERRUPT_MASK = 0x00000003;
+
+std::unordered_map<uint32_t, uint32_t> timer_config_map = {
+  {0x0, 500},
+  {0x1, 1000},
+  {0x2, 1500},
+  {0x3, 2000},
+  {0x4, 5000},
+  {0x5, 10000},
+  {0x6, 30000},
+  {0x7, 60000}
+};
 
 int32_t handleArguments(int argc, char* argv[], std::string& a_input_file) {
   if (argc != 2) {
@@ -143,9 +160,51 @@ void pop(uint32_t& a_dst) {
   emulator.m_gpr[SP]+= 4;
 }
 
+void printInstruction(uint8_t a_oc) {
+  switch (a_oc) {
+    case OpCode::HALT:
+      std::cout << "HALT instruction on " << std::hex << emulator.m_gpr[PC] << std::dec << std::endl;
+      break;
+    case OpCode::INT:
+      std::cout << "INT instruction on " << std::hex << emulator.m_gpr[PC] << std::dec << std::endl;
+      break;
+    case OpCode::CALL:
+      std::cout << "CALL instruction on " << std::hex << emulator.m_gpr[PC] << std::dec << std::endl;
+      break;
+    case OpCode::JMP:
+      std::cout << "JMP instruction on " << std::hex << emulator.m_gpr[PC] << std::dec << std::endl;
+      break;
+    case OpCode::XCHG:
+      std::cout << "XCHG instruction on " << std::hex << emulator.m_gpr[PC] << std::dec << std::endl;
+      break;
+    case OpCode::ARITHMETIC:
+      std::cout << "ARITHMETIC instruction on " << std::hex << emulator.m_gpr[PC] << std::dec << std::endl;
+      break;
+    case OpCode::LOGIC:
+      std::cout << "LOGIC instruction on " << std::hex << emulator.m_gpr[PC] << std::dec << std::endl;
+      break;
+    case OpCode::SHIFT:
+      std::cout << "SHIFT instruction on " << std::hex << emulator.m_gpr[PC] << std::dec << std::endl;
+      break;
+    case OpCode::ST:
+      std::cout << "ST instruction on " << std::hex << emulator.m_gpr[PC] << std::dec << std::endl;
+      break;
+    case OpCode::LD:
+      std::cout << "LD instruction on " << std::hex << emulator.m_gpr[PC] << std::dec << std::endl;
+      break;
+    default:
+      std::cout << "Unknown instruction on " << std::hex << emulator.m_gpr[PC] << std::dec << std::endl;
+      break;
+  }
+}
+
 void execute() {
   emulator.m_gpr[PC] = 0x40000000;
   Instruction curr_instr;
+  auto start_time = std::chrono::high_resolution_clock::now();
+  auto end_time = start_time;
+  int32_t timer_config = -1;
+  bool timer_triggered = false;
   do {
     curr_instr = loadInstr(emulator.m_gpr[PC]);
     switch (curr_instr.m_oc) 
@@ -312,9 +371,23 @@ void execute() {
                 emulator.m_gpr[curr_instr.m_reg_a] + 
                 emulator.m_gpr[curr_instr.m_reg_b] + 
                 curr_instr.m_disp
-              ) == termOut
+              ) == term_out
               ) {
               std::cout << static_cast<char>(emulator.m_gpr[curr_instr.m_reg_c] & 0xFF);
+            } else if (
+              readWord(
+                emulator.m_gpr[curr_instr.m_reg_a] + 
+                emulator.m_gpr[curr_instr.m_reg_b] + 
+                curr_instr.m_disp
+              ) == tim_cfg
+            ) {
+              if (timer_config_map.find(emulator.m_gpr[curr_instr.m_reg_c]) != timer_config_map.end()) {
+                timer_config = timer_config_map[emulator.m_gpr[curr_instr.m_reg_c]];
+                // std::cout << "Tajmer konfigurisan na: " 
+                //  << timer_config << " ms" << std::endl;
+              } else {
+                std::cerr << "Greska: Nevalidna vrednost za konfiguraciju tajmera" << std::endl;
+              }
             }
             writeWord(
               readWord(emulator.m_gpr[curr_instr.m_reg_a] + emulator.m_gpr[curr_instr.m_reg_b] + curr_instr.m_disp),
@@ -349,6 +422,7 @@ void execute() {
           case LdMod::CSR_DIR:
             // csr[A]<=gpr[B]
             emulator.m_csr[curr_instr.m_reg_a] = emulator.m_gpr[curr_instr.m_reg_b];
+            // std::cout << "HANDLER = " << std::hex << emulator.m_csr[Csr::HANDLER] << std::dec << std::endl;
             break;
           case LdMod::CSR_PC_REL:
             // csr[A]<=csr[B]|D;
@@ -374,15 +448,39 @@ void execute() {
     }
     // std::cout << "Stigao do provere" << std::endl;
     char c = getc(stdin);
-    if (c != EOF && !(emulator.m_csr[Csr::STATUS] & 0x2)) {
-      emulator.m_mem32[termIn] = static_cast<uint8_t>(c);
+    if (c != EOF && (emulator.m_csr[Csr::STATUS] & INTERRUPT_MASK) == 0 && 
+        (emulator.m_csr[Csr::STATUS] & TERMINAL_MASK) == 0) {
+      emulator.m_mem32[term_in] = static_cast<uint8_t>(c);
       push(emulator.m_csr[Csr::STATUS]);
       push(emulator.m_gpr[PC]);
       emulator.m_csr[Csr::CAUSE] = 0x00000003;
-      emulator.m_csr[Csr::STATUS] = emulator.m_csr[Csr::STATUS] | 0x2;
+      emulator.m_csr[Csr::STATUS] = emulator.m_csr[Csr::STATUS] | INTERRUPT_MASK;
       emulator.m_gpr[PC] = emulator.m_csr[Csr::HANDLER];
-    } else {
     }
+    end_time = std::chrono::high_resolution_clock::now();
+    if (timer_config != -1 && (emulator.m_csr[Csr::STATUS] & INTERRUPT_MASK) == 0 && 
+        (emulator.m_csr[Csr::STATUS] & TIMER_MASK) == 0) {
+      auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+      if (elapsed_time - timer_config >= -5) {
+        timer_triggered = true;
+      }
+      if (elapsed_time >= timer_config) {
+        //timer_triggered = true;
+        // std::cout << "Tajmer ispaljen nakon: " << elapsed_time << " ms" << std::endl;
+        push(emulator.m_csr[Csr::STATUS]);
+        push(emulator.m_gpr[PC]);
+        // std::cout << "Handler address: " << std::hex << emulator.m_csr[Csr::HANDLER] << std::dec << std::endl;
+        // std::cout << "SP = " << std::hex << emulator.m_gpr[SP] << std::dec << std::endl;
+        emulator.m_csr[Csr::CAUSE] = 0x00000002;
+        emulator.m_csr[Csr::STATUS] = emulator.m_csr[Csr::STATUS] | INTERRUPT_MASK;
+        emulator.m_gpr[PC] = emulator.m_csr[Csr::HANDLER];
+        start_time = std::chrono::high_resolution_clock::now();
+      }
+    }
+    // printInstruction(curr_instr.m_oc);
+    // if (timer_triggered) {
+    //   printInstruction(curr_instr.m_oc);
+    // }
   } while(curr_instr.m_oc != OpCode::HALT);
 }
 
