@@ -22,12 +22,6 @@ const uint8_t INSTR_ADDEND = 2;
 const uint8_t DIR_ADDEND = 0;
 uint32_t defined_sym_cnt = 0;
 
-/**
- * @brief Updates the location counter in the 
- * current section for the given number of bytes
- * 
- * @param a_bytes Given number of bytes
- */
 void adjustLocation(uint32_t a_bytes){
   location_counter+= a_bytes;
   total_offset+= a_bytes;
@@ -73,12 +67,6 @@ void insertSymbolIfAbsent(Sym a_sym){
   }
 }
 
-/**
- * @brief Adds a relocation entry to the relocation table for the current section
- * 
- * @param a_sym Symbol associated with the relocation
- * @param a_rela Relocation entry to be added
- */
 void addRela(Sym a_sym, Rela& a_rela, const std::string& a_sctn_name){
   if(a_sym.m_bind == SymbolBinding::LOC){
     a_rela.m_sym_name = a_sym.m_sctn_name;
@@ -87,32 +75,15 @@ void addRela(Sym a_sym, Rela& a_rela, const std::string& a_sctn_name){
   section_relas_table[a_sctn_name].push_back(a_rela);
 }
 
-/**
- * @brief Adds usage of the symbol inside instruction for the current section
- * 
- * @param a_sym_name Name of the given symbol
- */
 void addSymUsage(const std::string a_sym_name){
   insertSymbolIfAbsent(Sym(a_sym_name));
   symbol_usages_table[a_sym_name].push_back(location_counter-INSTR_ADDEND);
 }
 
-/**
- * @brief Adds usage of the literal inside instruction for the current section
- * 
- * @param a_sym_name Value of the given literal
- */
 void addLiteralUsage(uint32_t a_literal){
   literal_usages_table[a_literal].push_back(location_counter-INSTR_ADDEND);
 }
 
-/**
- * @brief Adds forward reference to the symbol for the current section
- * 
- * @param a_sym_name Name of the given symbol
- * @param a_offset Offset within the section where the symbol is referenced
- * @param a_addend Represents an additional information used for the relocation
- */
 void addForwardReference(const std::string a_sym_name,
   uint32_t a_offset,
   int32_t a_addend
@@ -137,12 +108,6 @@ void openNewSection(std::string a_sctn_name){
   symbol_usages_table.clear();
 }
 
-/**
- * @brief Patches the third and fourth byte of the instruction to complete 12-bit displacement
- * 
- * @param a_disp Displacement value
- * @param a_offset Start address of the disp field
- **/ 
 void patchDispField(const std::string a_sctn_name, uint32_t a_offset, uint16_t a_disp) {
     uint8_t regC_bits = section_data_table[a_sctn_name][a_offset] & 0xF0;
     uint8_t disp_high = static_cast<uint8_t>((a_disp >> 8) & 0x0F);
@@ -152,11 +117,6 @@ void patchDispField(const std::string a_sctn_name, uint32_t a_offset, uint16_t a
     updateByte(section_data_table, a_sctn_name, a_offset + 1, disp_low);
 }
 
-/**
- * @brief Patches the mod field of the instruction when symbol is defined in the same section
- * 
- * @param a_instr_addr Address of the instruction
- */
 void patchModField(uint32_t a_instr_addr) {
   uint32_t instr = readInstr(current_section, a_instr_addr);
   int oc = static_cast<int>((instr >> 28) & 0xF);
@@ -327,7 +287,6 @@ void handleDirectiveSymbol(const std::string& a_sym_name){
   writeWord(0x00000000);
 }
 
-/// Called after entire instruction is written with disp = 0,
 void handleInstructionLiteral(uint32_t a_literal){
   addLiteralUsage(a_literal);
 }

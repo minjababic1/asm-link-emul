@@ -383,8 +383,6 @@ void execute() {
             ) {
               if (timer_config_map.find(emulator.m_gpr[curr_instr.m_reg_c]) != timer_config_map.end()) {
                 timer_config = timer_config_map[emulator.m_gpr[curr_instr.m_reg_c]];
-                // std::cout << "Tajmer konfigurisan na: " 
-                //  << timer_config << " ms" << std::endl;
               } else {
                 std::cerr << "Greska: Nevalidna vrednost za konfiguraciju tajmera" << std::endl;
               }
@@ -422,7 +420,6 @@ void execute() {
           case LdMod::CSR_DIR:
             // csr[A]<=gpr[B]
             emulator.m_csr[curr_instr.m_reg_a] = emulator.m_gpr[curr_instr.m_reg_b];
-            // std::cout << "HANDLER = " << std::hex << emulator.m_csr[Csr::HANDLER] << std::dec << std::endl;
             break;
           case LdMod::CSR_PC_REL:
             // csr[A]<=csr[B]|D;
@@ -446,7 +443,6 @@ void execute() {
       default:
         break;
     }
-    // std::cout << "Stigao do provere" << std::endl;
     char c = getc(stdin);
     if (c != EOF && (emulator.m_csr[Csr::STATUS] & INTERRUPT_MASK) == 0 && 
         (emulator.m_csr[Csr::STATUS] & TERMINAL_MASK) == 0) {
@@ -465,22 +461,14 @@ void execute() {
         timer_triggered = true;
       }
       if (elapsed_time >= timer_config) {
-        //timer_triggered = true;
-        // std::cout << "Tajmer ispaljen nakon: " << elapsed_time << " ms" << std::endl;
         push(emulator.m_csr[Csr::STATUS]);
         push(emulator.m_gpr[PC]);
-        // std::cout << "Handler address: " << std::hex << emulator.m_csr[Csr::HANDLER] << std::dec << std::endl;
-        // std::cout << "SP = " << std::hex << emulator.m_gpr[SP] << std::dec << std::endl;
         emulator.m_csr[Csr::CAUSE] = 0x00000002;
         emulator.m_csr[Csr::STATUS] = emulator.m_csr[Csr::STATUS] | INTERRUPT_MASK;
         emulator.m_gpr[PC] = emulator.m_csr[Csr::HANDLER];
         start_time = std::chrono::high_resolution_clock::now();
       }
     }
-    // printInstruction(curr_instr.m_oc);
-    // if (timer_triggered) {
-    //   printInstruction(curr_instr.m_oc);
-    // }
   } while(curr_instr.m_oc != OpCode::HALT);
 }
 

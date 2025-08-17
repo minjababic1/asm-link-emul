@@ -4,9 +4,6 @@
 #include <iomanip>
 #include <iostream>
 
-ElfHdr elf_hdr;
-std::unordered_map<std::string, SectionHdr> section_headers;
-
 namespace SymTabLayout{
   const std::size_t NUM_OFF = 0;
   const std::size_t NUM_WIDTH = 6;
@@ -27,7 +24,7 @@ namespace SymTabLayout{
   const std::size_t SCTN_WIDTH = 20;
 
   const std::size_t NAME_OFF = 55;
-}
+} // namespace
 
 namespace RelaLayout{
   const std::size_t OFFSET_OFF = 0;

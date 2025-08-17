@@ -31,7 +31,7 @@ loop:
     pop %r1
     ret
 message_start:
-.ascii "timer_interrupt"
+.ascii "timer interrupt"
 message_end:
 
 .end
